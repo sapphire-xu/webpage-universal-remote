@@ -29,7 +29,7 @@ function extDead(err) {
 var UR = {
   HOST_ID: "universal-remote-host",
   CONFIRM_MS: 16000,
-  VERSION: "1.3.6",
+  VERSION: "1.3.7",
 };
 try {
   UR.VERSION = chrome.runtime.getManifest().version || UR.VERSION;
@@ -2012,7 +2012,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     let result;
     if (force) {
       result = await execute(actionId, true);
-      if (result.ok) showToast(`已强制执行：${meta.label}。已跳过页面原逻辑，进度/计数可能未更新。使用强制跳过存在风险，请谨慎核对结果。`, "ok");
+      if (result.ok) showToast(`已强制执行：${meta.label}。已绕过页面原逻辑，站点状态可能与显示不一致。使用强制跳过存在风险，请谨慎核对结果。`, "ok");
       else showToast(`强制执行失败：${result.reason || "not_found"}${result.detail ? " " + result.detail : ""}`, "err");
       refreshChrome();
       return;
@@ -2024,7 +2024,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       const how = method.indexOf("jquery-click") === 0 || method.indexOf("dom-click") === 0
         ? "已点击课件按钮（走页面原逻辑）"
         : method.indexOf("page-item") === 0
-        ? "已强制切换课件页（可能未上报进度）"
+        ? "已强制切换页面（可能已跳过站点原逻辑）"
         : method.indexOf("main-") === 0 || method === "media.currentTime"
           ? "已" + meta.label
           : result.method === "click"
@@ -2036,7 +2036,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
 
     showToast(
-      `未找到「${meta.label}」对应按钮。连点遥控不会强制。\n\n使用强制跳过可能存在风险，请谨慎使用。强制执行会跳过页面原有步骤（进度上报、页码计数、看完才能翻页等），可能导致数据异常或交课失败。`,
+      `未找到「${meta.label}」对应按钮。连点遥控不会强制。\n\n使用强制跳过可能存在风险，请谨慎使用。强制执行会绕过页面原来的点击与校验流程，站点状态或数据可能与预期不符。`,
       "warn",
       actionId
     );
