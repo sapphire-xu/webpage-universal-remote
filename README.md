@@ -1,6 +1,8 @@
 # 网页万能遥控
 
-Edge / Chrome（Chromium）浏览器扩展：在网页上提供可拖拽的浮层遥控器，用于音视频快进快退、播放暂停，以及上一页 / 下一页。
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
+Edge / Chrome（Chromium）浏览器扩展：在网页上提供可拖拽的浮层遥控器，用于音视频快进快退、播放暂停，以及上一页 / 下一页。当前版本 **1.3.6**。
 
 优先模拟点击页面上已有的按钮；找不到时**不会**因为连点遥控而强制跳过。只有提示条里的「强制执行」才会走强制路径。
 

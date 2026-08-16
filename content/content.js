@@ -28,7 +28,7 @@ function extDead(err) {
 
 var UR = {
   HOST_ID: "universal-remote-host",
-  CONFIRM_MS: 8000,
+  CONFIRM_MS: 16000,
   VERSION: "1.3.6",
 };
 try {
