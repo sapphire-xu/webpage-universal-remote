@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>万能遥控 · 本地演示</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+      background: #111018;
+      color: #efeafc;
+    }
+    main { max-width: 880px; margin: 0 auto; padding: 32px 20px 80px; }
+    h1 { font-size: 24px; margin: 0 0 8px; }
+    p { color: #c8c0e4; line-height: 1.6; }
+    video {
+      width: 100%;
+      border-radius: 16px;
+      background: #000;
+      margin: 16px 0;
+    }
+    .bar, .pager { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 18px; }
+    button, a.btn {
+      border: 0;
+      border-radius: 10px;
+      background: #2a2540;
+      color: #fff;
+      padding: 8px 14px;
+      cursor: pointer;
+      text-decoration: none;
+      font: 650 13px/1.4 "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+    button:hover, a.btn:hover { background: #3b3458; }
+    .pager a[aria-current="page"] { background: #6d4dff; }
+    .hide-native button.native, .hide-native a.native { display: none; }
+    .note {
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: #1b1828;
+      border: 1px solid #3a3454;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>万能遥控演示页</h1>
+    <p>先在 Edge 加载扩展，再刷新本页。左下角应出现浮层遥控器。绿点表示识别到了页面按钮，蓝点表示能直接控制播放器。</p>
+    <div class="note">若用 <code>file://</code> 打开本页，请到扩展详情里打开「允许访问文件网址」。</div>
+
+    <video id="player" controls>
+      <source src="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4" type="video/mp4">
+    </video>
+
+    <div class="bar" id="playerBar">
+      <button class="native" id="playBtn" aria-label="播放">播放</button>
+      <button class="native" id="back10" aria-label="快退10秒">快退 10 秒</button>
+      <button class="native" id="fwd10" aria-label="快进10秒">快进 10 秒</button>
+      <button class="native" id="back60" aria-label="快退1分钟">快退 1 分钟</button>
+      <button class="native" id="fwd60" aria-label="快进1分钟">快进 1 分钟</button>
+      <button id="toggleNative">隐藏页面按钮（测强制执行）</button>
+    </div>
+
+    <div class="pager" id="pager">
+      <a class="btn native" id="prevPage" href="?page=1">上一页</a>
+      <a class="btn" href="?page=1">1</a>
+      <a class="btn" href="?page=2" aria-current="page">2</a>
+      <a class="btn" href="?page=3">3</a>
+      <a class="btn native" id="nextPage" href="?page=3">下一页</a>
+    </div>
+  </main>
+  <script>
+    const video = document.getElementById("player");
+    const playBtn = document.getElementById("playBtn");
+    const params = new URLSearchParams(location.search);
+    const page = Math.max(1, parseInt(params.get("page") || "2", 10));
+
+    document.getElementById("prevPage").href = "?page=" + Math.max(1, page - 1);
+    document.getElementById("nextPage").href = "?page=" + (page + 1);
+    document.querySelectorAll(".pager a").forEach((a) => {
+      if (a.id) return;
+      a.toggleAttribute("aria-current", a.textContent === String(page));
+    });
+
+    function syncPlay() {
+      playBtn.textContent = video.paused ? "播放" : "暂停";
+      playBtn.setAttribute("aria-label", playBtn.textContent);
+    }
+    playBtn.addEventListener("click", () => {
+      if (video.paused) video.play();
+      else video.pause();
+    });
+    video.addEventListener("play", syncPlay);
+    video.addEventListener("pause", syncPlay);
+    document.getElementById("back10").onclick = () => { video.currentTime -= 10; };
+    document.getElementById("fwd10").onclick = () => { video.currentTime += 10; };
+    document.getElementById("back60").onclick = () => { video.currentTime -= 60; };
+    document.getElementById("fwd60").onclick = () => { video.currentTime += 60; };
+    document.getElementById("toggleNative").onclick = () => {
+      document.body.classList.toggle("hide-native");
+    };
+  </script>
+</body>
+</html>

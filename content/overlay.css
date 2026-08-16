@@ -1,0 +1,336 @@
+:host {
+  all: initial;
+}
+
+.ur-root {
+  position: fixed;
+  left: 24px;
+  bottom: 24px;
+  z-index: 2147483646;
+  font-family: "Segoe UI Variable", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #f4f1ff;
+  user-select: none;
+  pointer-events: auto;
+}
+
+.ur-root * {
+  box-sizing: border-box;
+}
+
+.ur-panel {
+  width: 328px;
+  padding: 12px 12px 12px;
+  border-radius: 20px;
+  background:
+    radial-gradient(120% 80% at 0% 0%, rgba(124, 92, 255, 0.22), transparent 46%),
+    radial-gradient(90% 70% at 100% 100%, rgba(56, 189, 248, 0.08), transparent 42%),
+    linear-gradient(180deg, rgba(28, 26, 40, 0.96), rgba(12, 11, 18, 0.97));
+  border: 1px solid rgba(198, 184, 255, 0.2);
+  box-shadow:
+    0 18px 48px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
+    0 1px 0 rgba(255, 255, 255, 0.08) inset;
+  backdrop-filter: blur(22px) saturate(140%);
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
+}
+
+.ur-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 2px 10px;
+  cursor: grab;
+}
+
+.ur-head:active {
+  cursor: grabbing;
+}
+
+.ur-logo {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.ur-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.ur-ver {
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  opacity: 0.72;
+  line-height: 16px;
+}
+
+.ur-head-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.ur-icon-btn {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #d8d2ef;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 26px;
+  text-align: center;
+}
+
+.ur-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.ur-status {
+  min-height: 20px;
+  margin: 0 0 10px;
+  padding: 5px 9px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  font-size: 11px;
+  color: #b9b2d4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ur-label {
+  margin: 0 2px 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: rgba(214, 207, 236, 0.48);
+  text-transform: uppercase;
+}
+
+.ur-row {
+  display: flex;
+  gap: 6px;
+}
+
+.ur-row + .ur-label {
+  margin-top: 10px;
+}
+
+.ur-btn {
+  position: relative;
+  flex: 1;
+  height: 42px;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.055);
+  color: #f6f3ff;
+  font: 650 12px/1.05 "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  cursor: pointer;
+  transition: transform 0.14s ease, background 0.14s ease, box-shadow 0.14s ease;
+}
+
+.ur-btn:hover {
+  background: rgba(155, 132, 255, 0.24);
+}
+
+.ur-btn:active {
+  transform: scale(0.97);
+}
+
+.ur-btn.primary {
+  width: 46px;
+  flex: 0 0 46px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #9b80ff, #6d4dff);
+  box-shadow: 0 8px 18px rgba(109, 77, 255, 0.38);
+}
+
+.ur-btn.primary:hover {
+  background: linear-gradient(180deg, #ad96ff, #7d60ff);
+}
+
+.ur-btn.wide {
+  height: 40px;
+  letter-spacing: 0.06em;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ur-btn .kicker {
+  display: block;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  opacity: 0.55;
+  margin-bottom: 3px;
+}
+
+.ur-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.ur-btn.has-button .ur-dot {
+  background: #49e39a;
+  box-shadow: 0 0 8px rgba(73, 227, 154, 0.85);
+}
+
+.ur-btn.has-media:not(.has-button) .ur-dot {
+  background: #7aa7ff;
+  box-shadow: 0 0 8px rgba(122, 167, 255, 0.8);
+}
+
+.ur-legend {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+  padding: 0 2px;
+  font-size: 10px;
+  color: rgba(196, 189, 220, 0.55);
+}
+
+.ur-legend i {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: 50%;
+  vertical-align: 1px;
+}
+
+.ur-legend .g {
+  background: #49e39a;
+}
+
+.ur-legend .b {
+  background: #7aa7ff;
+}
+
+.ur-toast {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 10px);
+  padding: 11px 12px;
+  border-radius: 14px;
+  background: rgba(16, 14, 24, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.38);
+  font-size: 12px;
+  line-height: 1.5;
+  color: #efeafc;
+}
+
+.ur-toast.warn {
+  border-color: rgba(255, 196, 92, 0.38);
+}
+
+.ur-toast.ok {
+  border-color: rgba(73, 227, 154, 0.32);
+}
+
+.ur-toast.err {
+  border-color: rgba(255, 107, 107, 0.38);
+}
+
+.ur-toast-text {
+  user-select: text;
+  -webkit-user-select: text;
+  white-space: pre-wrap;
+  word-break: break-all;
+  cursor: text;
+}
+
+.ur-toast-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  user-select: none;
+}
+
+.ur-toast button {
+  height: 28px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #efeafc;
+  font: 700 11px/28px "Segoe UI", "Microsoft YaHei", sans-serif;
+  cursor: pointer;
+}
+
+.ur-toast button.ur-toast-learn {
+  background: #6d4dff;
+  color: #fff;
+}
+
+.ur-toast button.ur-toast-force {
+  background: #e24b4b;
+  color: #fff;
+}
+
+.ur-min {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 14px 0 8px;
+  border-radius: 999px;
+  background: rgba(18, 16, 26, 0.94);
+  color: #f4f1ff;
+  border: 1px solid rgba(186, 172, 255, 0.22);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.36);
+  cursor: pointer;
+  font: 700 12px/1 "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+.ur-min img {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+}
+
+.ur-root.is-min .ur-panel {
+  display: none;
+}
+
+.ur-root.is-min .ur-min {
+  display: flex;
+}
+
+.ur-root.is-drag .ur-panel {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+}
+
+.ur-root.is-hidden {
+  display: none;
+}
