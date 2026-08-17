@@ -167,6 +167,15 @@
   background: linear-gradient(180deg, #ad96ff, #7d60ff);
 }
 
+.ur-btn.primary.is-playing {
+  background: linear-gradient(180deg, #5ee0b5, #2aa876);
+  box-shadow: 0 8px 18px rgba(42, 168, 118, 0.38);
+}
+
+.ur-btn.primary.is-playing:hover {
+  background: linear-gradient(180deg, #78ecc6, #34c089);
+}
+
 .ur-btn.wide {
   height: 40px;
   letter-spacing: 0.06em;

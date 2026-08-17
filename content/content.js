@@ -29,7 +29,7 @@ function extDead(err) {
 var UR = {
   HOST_ID: "universal-remote-host",
   CONFIRM_MS: 16000,
-  VERSION: "1.3.7",
+  VERSION: "1.3.8",
 };
 try {
   UR.VERSION = chrome.runtime.getManifest().version || UR.VERSION;
@@ -383,6 +383,18 @@ const NEGATIVE = [
   "打开app",
   "分享",
   "share",
+  "搜索",
+  "search",
+  "查询",
+  "收藏",
+  "点赞",
+  "投币",
+  "关注",
+  "评论",
+  "favorite",
+  "favourite",
+  "like",
+  "collect",
 ];
 
 function isOurHost(el) {
@@ -707,6 +719,7 @@ function hasNegative(label) {
   return NEGATIVE.some((w) => {
     const nw = normalize(w);
     if (!nw) return false;
+    if (/[\u4e00-\u9fff]/.test(w)) return n.includes(nw) || raw.includes(w);
     if (nw.length <= 6) {
       const re = new RegExp("(^|\\s)" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(\\s|$)", "i");
       return re.test(raw) || n === nw;
@@ -838,9 +851,37 @@ function adapterSelectors(actionId) {
   return list;
 }
 
+function isNonNavControl(el) {
+  if (!el || el.nodeType !== 1) return false;
+  if (el.tagName === "INPUT") {
+    const t = String(el.type || "text").toLowerCase();
+    if (!["button", "submit", "image"].includes(t)) return true;
+  }
+  if (el.tagName === "TEXTAREA" || el.tagName === "SELECT") return true;
+  if (el.isContentEditable) return true;
+  const role = String(el.getAttribute("role") || "").toLowerCase();
+  if (role === "search" || role === "textbox" || role === "searchbox" || role === "combobox") return true;
+  const label = getLabel(el);
+  if (/搜索|查询|收藏|点赞|投币|关注|评论|search|favorite|favourite|\blike\b|collect|magnify/.test(label)) {
+    return true;
+  }
+  if (el.closest && el.closest("[role='search'], .v-text-field, [class*='search' i]")) {
+    if (/搜索|search|查询|magnify/.test(label) || role === "search" || el.tagName === "INPUT") return true;
+  }
+  return false;
+}
+
+function isNavListContext(el) {
+  if (!el || !el.closest) return false;
+  return !!el.closest(
+    "nav, .pagination, .pager, [class*='paginat' i], [class*='page-nav' i], [class*='episode' i], [class*='playlist' i], [class*='page-list' i], [role='navigation']"
+  );
+}
+
 function scoreCandidate(el, actionId) {
   if (!el || isOurHost(el)) return -Infinity;
   const nav = actionId === "nextPage" || actionId === "prevPage";
+  if (nav && isNonNavControl(el)) return -Infinity;
   const strongCls =
     (actionId === "nextPage" && STRONG_NEXT_CLASS.test(`${el.className || ""} ${el.id || ""}`)) ||
     (actionId === "prevPage" && STRONG_PREV_CLASS.test(`${el.className || ""} ${el.id || ""}`));
@@ -850,7 +891,7 @@ function scoreCandidate(el, actionId) {
     return -Infinity;
   }
   const label = getLabel(el);
-  if (hasNegative(label)) return -20;
+  if (hasNegative(label)) return nav ? -Infinity : -20;
 
   let score = 0;
   const phrases = TEXT[actionId] || [];
@@ -859,9 +900,9 @@ function scoreCandidate(el, actionId) {
   const compact = normalize(label);
   const onlyWeakNav = nav && hit > 0 && WEAK_NAV.has(compact);
   if (onlyWeakNav) {
-    const inNav = !!(el.closest && el.closest("nav, .pagination, .pager, [class*='paginat' i]"));
+    const inNav = isNavListContext(el);
     if (isMailHost() && !/封|邮件|郵件|mail|message/.test(compact)) score -= 40;
-    else if (!inNav && !isInPlayer(el) && !isInAppChrome(el) && !isMailHost()) score -= 24;
+    else if (!inNav && !isInPlayer(el) && !isMailHost()) score -= 24;
   }
 
   const cls = `${el.className || ""} ${el.id || ""}`.toLowerCase();
@@ -876,12 +917,14 @@ function scoreCandidate(el, actionId) {
   if (actionId === "prevPage" && /\bprev|previous\b/.test(rel)) score += 40;
 
   if (nav) {
-    if (el.closest && el.closest("nav, .pagination, .pager, [class*='paginat' i], [class*='page-nav' i]")) {
-      score += 16;
-    }
+    if (isNavListContext(el)) score += 16;
     if (isInPlayer(el) && /集|话|章|episode|chapter/.test(label)) score += 18;
-    if (/封|邮件|郵件|mail|message|信件/.test(label) || isInAppChrome(el)) score += 18;
-    if (isMailHost() && /封|mail|message/.test(label + cls)) score += 16;
+    if (/封|邮件|郵件|mail|message|信件/.test(label)) {
+      score += 18;
+      if (isInAppChrome(el) || isMailHost()) score += 16;
+    } else if (isInAppChrome(el) && hit <= 0 && !strongCls) {
+      score -= 20;
+    }
   }
 
   if (actionId.startsWith("seek") || actionId === "playPause") {
@@ -1210,13 +1253,14 @@ function findNativeButton(actionId) {
 
 function findAdjacentListItem(dir) {
   const selected = queryAllDeep(
-    '[aria-selected="true"], [aria-current="true"], tr.selected, tr.active, li.selected, li.active, [class*="selected" i], [class*="is-active" i], [class*="current" i]'
+    "[aria-current='page'], [aria-current='true'], nav [aria-selected='true'], .pagination .active, .pagination .current, .pager .active, .page-item.active"
   ).filter((el) => isVisible(el, { allowHiddenInPlayer: false }));
 
   for (const el of selected) {
+    if (!isNavListContext(el) && !el.closest(".pagination, .pager, nav")) continue;
     const row =
       (el.closest &&
-        el.closest("tr, li, [role='row'], [role='listitem'], [role='option'], [role='article']")) ||
+        el.closest("tr, li, [role='row'], [role='listitem'], [role='option'], .page-item")) ||
       el;
     const parent = row.parentElement;
     if (!parent) continue;
@@ -1231,7 +1275,9 @@ function findAdjacentListItem(dir) {
     if (!next) continue;
     const clickable =
       next.querySelector("a, [role='link'], [role='button']") || next;
-    if (clickable && !isOurHost(clickable)) return clickable;
+    if (!clickable || isOurHost(clickable) || isNonNavControl(clickable)) continue;
+    if (hasNegative(getLabel(clickable))) continue;
+    return clickable;
   }
   return null;
 }
@@ -1286,10 +1332,10 @@ function applyPlayPause(media) {
     if (p && typeof p.catch === "function") {
       p.catch(() => {});
     }
-    return { ok: true, method: "media.play" };
+    return { ok: true, method: "media.play", paused: false, exists: true };
   }
   media.pause();
-  return { ok: true, method: "media.pause" };
+  return { ok: true, method: "media.pause", paused: true, exists: true };
 }
 
 function sendKey(key, code, keyCode) {
@@ -1612,10 +1658,14 @@ try {
   }
   function handlePortMessage(port, msg) {
     if (msg.type === "MEDIA") {
-      let result = { ok: false, reason: "no-media", href: location.href };
+      let result = { ok: false, reason: "no-media", exists: false, paused: true, href: location.href };
       try {
         const media = getPrimaryMedia();
-        if (media) {
+        if (msg.kind === "state") {
+          result = media
+            ? { ok: true, exists: true, paused: !!(media.paused || media.ended), href: location.href }
+            : { ok: false, exists: false, paused: true, href: location.href };
+        } else if (media) {
           result =
             msg.kind === "playPause"
               ? applyPlayPause(media)
@@ -1661,6 +1711,15 @@ try {
     }
   }
   openPort();
+  window.addEventListener("pagehide", () => {
+    if (!urPort) return;
+    try {
+      urPort.disconnect();
+    } catch {
+      /* ignore */
+    }
+    urPort = null;
+  });
   window.addEventListener("pageshow", (event) => {
     if (event.persisted || !urPort) openPort();
   });
@@ -1706,6 +1765,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   let draggingOverlay = false;
   let dragW = 0;
   let dragH = 0;
+  let lastKnownPaused = true;
 
   const existing = document.getElementById(UR.HOST_ID);
   if (existing && existing.shadowRoot && existing.shadowRoot.querySelector(".ur-root")) {
@@ -1795,6 +1855,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         }
         refreshChrome();
       }, 1600);
+    }
+    if (!root.dataset.urMediaBound) {
+      root.dataset.urMediaBound = "1";
+      const onMediaEvt = () => {
+        const media = UR.getMediaState();
+        if (media.exists) lastKnownPaused = media.paused;
+        applyPlayIcon(!lastKnownPaused);
+      };
+      document.addEventListener("play", onMediaEvt, true);
+      document.addEventListener("pause", onMediaEvt, true);
+      document.addEventListener("ended", onMediaEvt, true);
     }
     window.addEventListener("beforeunload", () => window.clearInterval(scanTimer), { once: true });
   }
@@ -2014,6 +2085,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       result = await execute(actionId, true);
       if (result.ok) showToast(`已强制执行：${meta.label}。已绕过页面原逻辑，站点状态可能与显示不一致。使用强制跳过存在风险，请谨慎核对结果。`, "ok");
       else showToast(`强制执行失败：${result.reason || "not_found"}${result.detail ? " " + result.detail : ""}`, "err");
+      if (actionId === "playPause") rememberPlayState(result, true);
       refreshChrome();
       return;
     }
@@ -2022,7 +2094,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (result.ok) {
       const method = String(result.method || "");
       const how = method.indexOf("jquery-click") === 0 || method.indexOf("dom-click") === 0
-        ? "已点击课件按钮（走页面原逻辑）"
+        ? "已点击页面按钮（走页面原逻辑）"
         : method.indexOf("page-item") === 0
         ? "已强制切换页面（可能已跳过站点原逻辑）"
         : method.indexOf("main-") === 0 || method === "media.currentTime"
@@ -2031,6 +2103,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             ? `已点击页面按钮：${meta.label}`
             : `已通过播放器执行：${meta.label}`;
       showToast(how, "ok");
+      if (actionId === "playPause") rememberPlayState(result, true);
       refreshChrome();
       return;
     }
@@ -2130,6 +2203,33 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }, kind === "err" ? 20000 : forceAction ? UR.CONFIRM_MS : 2600);
   }
 
+  function rememberPlayState(result, toggleIfUnknown) {
+    if (result && typeof result.paused === "boolean") {
+      lastKnownPaused = result.paused;
+    } else if (result && result.method === "media.play" || result && result.method === "main-play") {
+      lastKnownPaused = false;
+    } else if (result && (result.method === "media.pause" || result.method === "main-pause")) {
+      lastKnownPaused = true;
+    } else if (toggleIfUnknown) {
+      lastKnownPaused = !lastKnownPaused;
+    }
+    applyPlayIcon(!lastKnownPaused);
+  }
+
+  function applyPlayIcon(playing) {
+    if (!shadow) return;
+    const icon = shadow.querySelector("[data-play-icon]");
+    if (icon) {
+      while (icon.firstChild) icon.removeChild(icon.firstChild);
+      icon.appendChild(svgIcon(playing ? "pause" : "play"));
+    }
+    const btn = shadow.querySelector('[data-action="playPause"]');
+    if (btn) {
+      btn.classList.toggle("is-playing", !!playing);
+      btn.title = playing ? "暂停" : "播放";
+    }
+  }
+
   async function refreshChrome() {
     if (!root || draggingOverlay || root.classList.contains("is-hidden")) return;
     let avail = {};
@@ -2144,15 +2244,22 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       btn.classList.toggle("has-media", !!info.media);
     }
     const media = UR.getMediaState();
-    const icon = shadow.querySelector("[data-play-icon]");
-    if (icon) {
-      while (icon.firstChild) icon.removeChild(icon.firstChild);
-      icon.appendChild(svgIcon(media.exists && !media.paused ? "pause" : "play"));
+    let playing = media.exists ? !media.paused : !lastKnownPaused;
+    if (media.exists) lastKnownPaused = media.paused;
+    try {
+      const remote = await chrome.runtime.sendMessage({ type: "UR_MEDIA_STATE" });
+      if (remote && remote.exists) {
+        lastKnownPaused = !!remote.paused;
+        playing = !remote.paused;
+      }
+    } catch {
+      /* ignore */
     }
+    applyPlayIcon(playing);
 
     const found = [];
     if (avail.playPause && avail.playPause.button) found.push("播放按钮");
-    else if (media.exists) found.push("播放器");
+    else if (media.exists || playing || !lastKnownPaused) found.push("播放器");
     if (avail.prevPage && avail.prevPage.button) {
       found.push(avail.prevPage.count > 1 ? "上一页×" + avail.prevPage.count + "（按当前位置选）" : "上一页/封");
     }
@@ -2162,7 +2269,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     try {
       const probe = await chrome.runtime.sendMessage({ type: "UR_HAS_PAGE_ITEM" });
       if (probe && probe.ok) {
-        if (!found.some((s) => s.indexOf("下一页") === 0)) found.push("课件翻页");
+        if (!found.some((s) => s.indexOf("下一页") === 0)) found.push("特化翻页");
       }
     } catch {
       /* ignore */

@@ -287,13 +287,17 @@ function mediaControlInPage(kind, delta) {
     if (media.paused || media.ended) {
       const p = media.play();
       if (p && typeof p.catch === "function") p.catch(function () {});
-      return { ok: true, method: "main-play", href: location.href };
+      return { ok: true, method: "main-play", paused: false, exists: true, href: location.href };
     }
     media.pause();
-    return { ok: true, method: "main-pause", href: location.href };
+    return { ok: true, method: "main-pause", paused: true, exists: true, href: location.href };
   }
 
   const media = pickMedia();
+  if (kind === "state") {
+    if (!media) return { ok: false, exists: false, paused: true, href: location.href };
+    return { ok: true, exists: true, paused: !!(media.paused || media.ended), href: location.href };
+  }
   if (!media) return { ok: false, reason: "no-media", href: location.href };
   if (kind === "playPause") return applyPlayPause(media);
   return applySeek(media, Number(delta) || 0);
@@ -313,7 +317,14 @@ const framePorts = new Set();
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== "ur-frame") return;
   framePorts.add(port);
-  port.onDisconnect.addListener(() => framePorts.delete(port));
+  port.onDisconnect.addListener(() => {
+    try {
+      void chrome.runtime.lastError;
+    } catch {
+      /* ignore */
+    }
+    framePorts.delete(port);
+  });
 });
 
 function mediaViaPorts(kind, delta) {
@@ -338,13 +349,21 @@ function mediaViaPorts(kind, delta) {
         } catch {
           /* ignore */
         }
-        if (msg.ok && !hit) hit = msg;
+        if (kind === "state") {
+          if (msg.exists) {
+            if (!msg.paused) hit = msg;
+            else if (!hit || !hit.exists) hit = msg;
+          }
+        } else if (msg.ok && !hit) {
+          hit = msg;
+        }
         left -= 1;
         if (left <= 0) finish();
       };
       port.onMessage.addListener(onMsg);
       try {
         port.postMessage({ type: "MEDIA", kind, delta });
+        void chrome.runtime.lastError;
       } catch {
         left -= 1;
       }
@@ -382,6 +401,7 @@ function navViaPorts(dir, force) {
       port.onMessage.addListener(onMsg);
       try {
         port.postMessage({ type: "NAV", dir, force });
+        void chrome.runtime.lastError;
       } catch {
         left -= 1;
       }
@@ -622,6 +642,33 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })()
       .then(sendResponse)
       .catch(() => sendResponse({ ok: false, reason: "media_failed" }));
+    return true;
+  }
+
+  if (msg.type === "UR_MEDIA_STATE") {
+    const tabId = sender.tab.id;
+    (async () => {
+      const viaPort = await mediaViaPorts("state", 0);
+      if (viaPort && viaPort.exists) return viaPort;
+      const frameIds = await listFrameIds(tabId);
+      for (const frameId of frameIds) {
+        try {
+          const results = await chrome.scripting.executeScript({
+            target: { tabId, frameIds: [frameId] },
+            world: "MAIN",
+            func: mediaControlInPage,
+            args: ["state", 0],
+          });
+          const val = results && results[0] && results[0].result;
+          if (val && val.exists) return val;
+        } catch {
+          /* host blocked */
+        }
+      }
+      return { ok: false, exists: false, paused: true };
+    })()
+      .then(sendResponse)
+      .catch(() => sendResponse({ ok: false, exists: false, paused: true }));
     return true;
   }
 
