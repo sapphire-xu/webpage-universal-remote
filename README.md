@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
-Edge / Chrome（Chromium）浏览器扩展：在网页上提供可拖拽的浮层遥控器，用于音视频快进快退、播放暂停，以及上一页 / 下一页。当前版本 **1.4.8**。本扩展按 Manifest V3 编写，在 **Google Chrome 与 Microsoft Edge 上同等支持**（未上架商店，均用「加载未打包的扩展」安装）。
+Edge / Chrome（Chromium）浏览器扩展：在网页上提供可拖拽的浮层遥控器，用于音视频快进快退、播放暂停，以及上一页 / 下一页。当前版本 **1.4.9**。本扩展按 Manifest V3 编写，在 **Google Chrome 与 Microsoft Edge 上同等支持**（未上架商店，均用「加载未打包的扩展」安装）。
 
 > Universal Webpage Remote: a browser extension for Microsoft Edge and Chrome. It can seek and pause audio, video, and animations, handle various kinds of in-page navigation, and run automation. It prefers simulating the site's own interactions first, and includes specialized handling for certain scenarios.
 
@@ -79,13 +79,7 @@ Chrome 无痕 / Edge InPrivate 需在详情里单独勾选允许。不支持 Fir
 
 ## 预览
 
-面板截图将放在这里，便于在 GitHub 上直接看到遥控器长什么样。你可以把裁好的图发给维护者，或自行放到 `docs/preview.png` 后在本段引用：
-
-```markdown
 ![万能遥控面板](docs/preview.png)
-```
-
-本环境无法打开你本机已加载的扩展去截图，需要你在浏览器里截一张（尽量只框面板、去掉桌面杂物）。
 
 ## 开发与维护
 

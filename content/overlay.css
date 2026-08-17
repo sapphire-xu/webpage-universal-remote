@@ -236,6 +236,10 @@
   background: rgba(255, 255, 255, 0.06);
 }
 
+.ur-btn.wide:hover {
+  background: rgba(155, 132, 255, 0.24);
+}
+
 .ur-btn .kicker {
   display: block;
   font-size: 9px;

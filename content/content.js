@@ -29,7 +29,7 @@ function extDead(err) {
 var UR = {
   HOST_ID: "universal-remote-host",
   CONFIRM_MS: 16000,
-  VERSION: "1.4.8",
+  VERSION: "1.4.9",
 };
 try {
   UR.VERSION = chrome.runtime.getManifest().version || UR.VERSION;
