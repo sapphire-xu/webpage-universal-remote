@@ -29,7 +29,7 @@ function extDead(err) {
 var UR = {
   HOST_ID: "universal-remote-host",
   CONFIRM_MS: 16000,
-  VERSION: "1.4.0",
+  VERSION: "1.4.1",
 };
 try {
   UR.VERSION = chrome.runtime.getManifest().version || UR.VERSION;
@@ -1002,6 +1002,7 @@ function clickablePool() {
 }
 
 const LEARN_KEY = "ur-learned";
+const PENDING_TOAST_KEY = "ur-pending-toast";
 UR.learned = {};
 
 function loadLearned() {
@@ -1117,7 +1118,29 @@ function saveLearned(actionId, el) {
     if (!UR.learned[key]) UR.learned[key] = {};
     UR.learned[key][actionId] = rec;
   }
-  chrome.storage.local.set({ [LEARN_KEY]: UR.learned }).catch(() => {});
+  const pending = {
+    ts: Date.now(),
+    text: "已记住指定的按钮。跳转后仍可改指定。",
+    kind: "ok",
+    extra: { retry: actionId },
+    actionId,
+  };
+  try {
+    chrome.storage.local.set({ [LEARN_KEY]: UR.learned, [PENDING_TOAST_KEY]: pending }).catch(() => {});
+  } catch {
+    /* ignore */
+  }
+  try {
+    chrome.runtime.sendMessage({ type: "UR_SAVE_LEARNED", learned: UR.learned, pending }, () => {
+      try {
+        void chrome.runtime.lastError;
+      } catch {
+        /* ignore */
+      }
+    });
+  } catch {
+    /* ignore */
+  }
   clearTried(actionId);
   return rec;
 }
@@ -2060,6 +2083,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             el("span", { text: "ms" }),
             el("button", { class: "ur-auto-btn", "data-act": "auto-next", type: "button", text: "开始" }),
           ]),
+          el("div", { class: "ur-label", text: "指定按钮" }),
+          el("div", { class: "ur-chips" }, [
+            el("button", { class: "ur-chip", "data-capture": "prevPage", type: "button", text: "指定上一页" }),
+            el("button", { class: "ur-chip", "data-capture": "nextPage", type: "button", text: "指定下一页" }),
+            el("button", { class: "ur-chip", "data-capture": "playPause", type: "button", text: "指定播放" }),
+          ]),
         ]),
         el("div", { class: "ur-legend" }, [
           el("span", {}, [el("i", { class: "g" }), "识别到按钮"]),
@@ -2099,6 +2128,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     attachHost();
     watchHost();
     watchFullscreen();
+    consumePendingToast();
   }
 
   function attachHost() {
@@ -2137,10 +2167,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     shadow.querySelector(".ur-min").addEventListener("click", () => {
       root.classList.remove("is-min");
       saveState();
+      consumePendingToast();
     });
     enableDrag(shadow.querySelector(".ur-head"));
     enableDrag(shadow.querySelector(".ur-min"));
     window.addEventListener("resize", keepInView);
+    window.addEventListener("pageshow", () => consumePendingToast());
   }
 
   function onClick(event) {
@@ -2150,6 +2182,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     event.stopPropagation();
     if (btn.dataset.act === "min") {
       root.classList.add("is-min");
+      hideToast();
       saveState();
       return;
     }
@@ -2212,6 +2245,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     const meta = UR.ACTIONS[actionId];
     if (!meta) return;
 
+    showToast("正在尝试「" + meta.label + "」…", "info", { busy: true });
+
     let result;
     if (force) {
       result = await execute(actionId, true);
@@ -2267,6 +2302,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   async function tryOther(actionId) {
+    const label = UR.ACTIONS[actionId] ? UR.ACTIONS[actionId].label : actionId;
+    showToast("正在尝试其它「" + label + "」候选…", "info", { busy: true });
     const prev = lastHits.get(actionId);
     if (prev) markTried(actionId, prev);
     const result = await execute(actionId, false, { skipMedia: true, skipSpecial: true, skipTried: true });
@@ -2280,9 +2317,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== "local" || !changes[LEARN_KEY]) return;
-    showToast("已记住本站按钮，以后会优先点击它。", "ok");
-    refreshChrome();
+    if (area !== "local") return;
+    if (changes[LEARN_KEY]) refreshChrome();
+    if (changes[PENDING_TOAST_KEY] && changes[PENDING_TOAST_KEY].newValue) {
+      consumePendingToast();
+    }
   });
 
   async function execute(actionId, force, opts) {
@@ -2333,8 +2372,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
   }
 
+  function hideToast() {
+    const box = shadow && shadow.querySelector(".ur-toast");
+    if (box) box.hidden = true;
+    window.clearTimeout(toastTimer);
+  }
+
   function showToast(text, kind, extra) {
+    if (!shadow || !root || root.classList.contains("is-min") || root.classList.contains("is-hidden")) return;
     const box = shadow.querySelector(".ur-toast");
+    if (!box) return;
     box.className = "ur-toast " + (kind || "");
     box.hidden = false;
     while (box.firstChild) box.removeChild(box.firstChild);
@@ -2358,9 +2405,48 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
     if (actions.length) box.appendChild(el("div", { class: "ur-toast-actions" }, actions));
     window.clearTimeout(toastTimer);
+    if (opts.busy) return;
+    try {
+      chrome.storage.local.set({
+        [PENDING_TOAST_KEY]: {
+          ts: Date.now(),
+          text: String(text),
+          kind: kind || "",
+          extra: { force: forceAction || undefined, retry: retryAction || undefined },
+        },
+      });
+    } catch {
+      /* ignore */
+    }
     toastTimer = window.setTimeout(() => {
       box.hidden = true;
     }, kind === "err" ? 20000 : forceAction || retryAction ? UR.CONFIRM_MS : 2600);
+  }
+
+  async function consumePendingToast() {
+    if (!shadow || !root || root.classList.contains("is-min") || root.classList.contains("is-hidden")) return;
+    let pending = null;
+    try {
+      const data = await chrome.storage.local.get(PENDING_TOAST_KEY);
+      pending = data && data[PENDING_TOAST_KEY];
+    } catch {
+      return;
+    }
+    if (!pending || !pending.text) return;
+    if (pending.ts && Date.now() - pending.ts > 120000) {
+      try {
+        chrome.storage.local.remove(PENDING_TOAST_KEY);
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    try {
+      chrome.storage.local.remove(PENDING_TOAST_KEY);
+    } catch {
+      /* ignore */
+    }
+    showToast(pending.text, pending.kind || "ok", pending.extra || { retry: pending.actionId });
   }
 
   function rememberPlayState(result, toggleIfUnknown) {

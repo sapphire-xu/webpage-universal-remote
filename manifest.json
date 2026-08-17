@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "网页万能遥控",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "页面浮层遥控器：音视频快进快退、播放暂停、上一页/下一集。支持 Chrome 与 Edge。强制执行有风险，请谨慎使用。",
   "icons": {
     "16": "icons/icon16.png",

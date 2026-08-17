@@ -49,10 +49,11 @@
 .ur-logo {
   width: 26px;
   height: 26px;
-  border-radius: 8px;
-  object-fit: cover;
+  border-radius: 0;
+  object-fit: contain;
   flex: 0 0 auto;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+  background: transparent;
+  box-shadow: none;
 }
 
 .ur-title {
@@ -267,6 +268,14 @@
   border-color: rgba(255, 107, 107, 0.38);
 }
 
+.ur-toast.info {
+  border-color: rgba(122, 167, 255, 0.38);
+}
+
+.ur-root.is-min .ur-toast {
+  display: none !important;
+}
+
 .ur-toast-text {
   user-select: text;
   -webkit-user-select: text;
@@ -426,7 +435,9 @@
 .ur-min img {
   width: 28px;
   height: 28px;
-  border-radius: 9px;
+  border-radius: 0;
+  object-fit: contain;
+  background: transparent;
 }
 
 .ur-root.is-min .ur-panel {

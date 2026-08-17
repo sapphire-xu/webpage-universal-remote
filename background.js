@@ -529,6 +529,17 @@ async function runInAllFrames(tabId, func, args) {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || !sender.tab || sender.tab.id == null) return;
 
+  if (msg.type === "UR_SAVE_LEARNED") {
+    chrome.storage.local
+      .set({
+        "ur-learned": msg.learned || {},
+        "ur-pending-toast": msg.pending || null,
+      })
+      .then(() => sendResponse({ ok: true }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+
   if (msg.type === "UR_BROADCAST") {
     relayToFrames(sender.tab.id, sender.frameId ?? 0, msg.payload)
       .then(sendResponse)
