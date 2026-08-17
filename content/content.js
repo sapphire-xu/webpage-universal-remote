@@ -29,7 +29,7 @@ function extDead(err) {
 var UR = {
   HOST_ID: "universal-remote-host",
   CONFIRM_MS: 16000,
-  VERSION: "1.4.9",
+  VERSION: "1.5.0",
 };
 try {
   UR.VERSION = chrome.runtime.getManifest().version || UR.VERSION;
@@ -1898,6 +1898,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   let draggingOverlay = false;
   let dragW = 0;
   let dragH = 0;
+  let suppressMinClick = false;
   let lastKnownPaused = true;
   let actionLock = false;
   let toastConsuming = false;
@@ -2288,7 +2289,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   function bind() {
     root.addEventListener("click", onClick);
-    shadow.querySelector(".ur-min").addEventListener("click", () => {
+    shadow.querySelector(".ur-min").addEventListener("click", (event) => {
+      if (suppressMinClick) {
+        suppressMinClick = false;
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       root.classList.remove("is-min");
       saveState();
       consumePendingToast();
@@ -2710,6 +2717,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (event.button !== 0) return;
       const innerBtn = event.target.closest && event.target.closest("button");
       if (innerBtn && innerBtn !== handle) return;
+      suppressMinClick = false;
       draggingOverlay = true;
       const rect = visualRect();
       sx = event.clientX;
@@ -2753,6 +2761,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       root.style.left = x + "px";
       root.style.top = y + "px";
       root.classList.remove("is-drag");
+      if (handle.classList.contains("ur-min") && Math.hypot(x - sl, y - st) > 6) {
+        suppressMinClick = true;
+        window.setTimeout(() => {
+          suppressMinClick = false;
+        }, 400);
+      }
       saveState();
     };
 
