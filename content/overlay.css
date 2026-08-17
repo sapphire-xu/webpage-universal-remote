@@ -300,9 +300,112 @@
   color: #fff;
 }
 
+.ur-toast button.ur-toast-alt {
+  background: rgba(122, 167, 255, 0.28);
+  color: #e8f0ff;
+}
+
 .ur-toast button.ur-toast-force {
   background: #e24b4b;
   color: #fff;
+}
+
+.ur-adv-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 32px;
+  margin-top: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #cfc7ea;
+  font: 700 11px/1 "Segoe UI", "Microsoft YaHei", sans-serif;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+}
+
+.ur-adv-toggle:hover,
+.ur-adv-toggle.is-open {
+  background: rgba(155, 132, 255, 0.16);
+  color: #fff;
+}
+
+.ur-adv-caret {
+  opacity: 0.7;
+  font-size: 10px;
+}
+
+.ur-advanced {
+  margin-top: 10px;
+  padding: 8px 8px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.ur-advanced[hidden] {
+  display: none;
+}
+
+.ur-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+
+.ur-chip,
+.ur-auto-btn {
+  height: 28px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #efeafc;
+  font: 700 11px/28px "Segoe UI", "Microsoft YaHei", sans-serif;
+  cursor: pointer;
+}
+
+.ur-chip:hover,
+.ur-auto-btn:hover {
+  background: rgba(155, 132, 255, 0.28);
+}
+
+.ur-chip.is-on,
+.ur-auto-btn.is-on {
+  background: #6d4dff;
+  color: #fff;
+}
+
+.ur-auto-btn.is-on {
+  background: #e24b4b;
+}
+
+.ur-adv-custom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #b9b2d4;
+}
+
+.ur-interval-input {
+  width: 88px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.28);
+  color: #f4f1ff;
+  font: 650 12px/28px "Segoe UI", "Consolas", monospace;
+  outline: none;
+}
+
+.ur-interval-input:focus {
+  border-color: rgba(155, 132, 255, 0.55);
 }
 
 .ur-min {

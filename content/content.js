@@ -29,7 +29,7 @@ function extDead(err) {
 var UR = {
   HOST_ID: "universal-remote-host",
   CONFIRM_MS: 16000,
-  VERSION: "1.3.8",
+  VERSION: "1.4.0",
 };
 try {
   UR.VERSION = chrome.runtime.getManifest().version || UR.VERSION;
@@ -633,7 +633,7 @@ function viewportRank(el) {
   return { inter, dist, painted, inView, area: Math.max(0, r.width * r.height) };
 }
 
-function pickBestNav(scored) {
+function rankCandidates(scored) {
   const seen = new Set();
   const list = [];
   for (const item of scored) {
@@ -650,7 +650,30 @@ function pickBestNav(scored) {
     if (a.inter !== b.inter) return b.inter - a.inter;
     return a.dist - b.dist;
   });
-  return list[0] || null;
+  return list;
+}
+
+function pickBestNav(scored) {
+  return rankCandidates(scored)[0] || null;
+}
+
+const skipTried = new Map();
+const lastHits = new Map();
+
+function markTried(actionId, el) {
+  if (!actionId || !el) return;
+  if (!skipTried.has(actionId)) skipTried.set(actionId, new WeakSet());
+  skipTried.get(actionId).add(el);
+}
+
+function wasTried(actionId, el) {
+  const set = skipTried.get(actionId);
+  return !!(set && el && set.has(el));
+}
+
+function clearTried(actionId) {
+  if (actionId) skipTried.delete(actionId);
+  else skipTried.clear();
 }
 
 function isVisible(el, { allowHiddenInPlayer = true, allowHiddenChrome = false } = {}) {
@@ -1095,6 +1118,7 @@ function saveLearned(actionId, el) {
     UR.learned[key][actionId] = rec;
   }
   chrome.storage.local.set({ [LEARN_KEY]: UR.learned }).catch(() => {});
+  clearTried(actionId);
   return rec;
 }
 
@@ -1247,8 +1271,8 @@ function findNativeButton(actionId) {
     if (adjacent) scored.push({ el: adjacent, score: 30, via: "list-adjacent" });
   }
 
-  const best = pickBestNav(scored.filter((x) => x && x.el && x.score >= 28));
-  return best || null;
+  const ranked = rankCandidates(scored.filter((x) => x && x.el && x.score >= 28));
+  return ranked.find((x) => !wasTried(actionId, x.el)) || null;
 }
 
 function findAdjacentListItem(dir) {
@@ -1324,6 +1348,17 @@ function applySeek(media, delta) {
     /* ignore */
   }
   return { ok: true, method: "media.currentTime", detail: next, from: before };
+}
+
+function applyRate(media, rate) {
+  const n = Number(rate);
+  if (!media || !Number.isFinite(n) || n <= 0) return { ok: false, reason: "bad-rate" };
+  try {
+    media.playbackRate = n;
+  } catch {
+    return { ok: false, reason: "rate-throw" };
+  }
+  return { ok: true, method: "media.rate", rate: media.playbackRate || n, exists: true, paused: !!(media.paused || media.ended) };
 }
 
 function applyPlayPause(media) {
@@ -1551,15 +1586,16 @@ function bumpPathNumber(url, dir) {
   return null;
 }
 
-UR.tryNative = function tryNative(actionId) {
+UR.tryNative = function tryNative(actionId, opts) {
   const meta = UR.ACTIONS[actionId];
   if (!meta) return { ok: false, reason: "unknown_action" };
+  opts = opts || {};
 
   if (meta.group === "nav" && hasCourseIframe() && !getActivePageItem()) {
     return { ok: false, reason: "course-in-iframe" };
   }
 
-  if (meta.group === "media") {
+  if (!opts.skipMedia && meta.group === "media") {
     const media = getPrimaryMedia();
     if (media) {
       if (actionId === "playPause") return applyPlayPause(media);
@@ -1569,10 +1605,11 @@ UR.tryNative = function tryNative(actionId) {
 
   const hit = findNativeButton(actionId);
   if (hit && simulateClick(hit.el)) {
+    lastHits.set(actionId, hit.el);
     return { ok: true, method: "click", via: hit.via, score: hit.score };
   }
 
-  return { ok: false, reason: "not_found" };
+  return { ok: false, reason: opts.skipTried ? "no_more_candidates" : "not_found" };
 };
 
 UR.force = function force(actionId) {
@@ -1665,6 +1702,10 @@ try {
           result = media
             ? { ok: true, exists: true, paused: !!(media.paused || media.ended), href: location.href }
             : { ok: false, exists: false, paused: true, href: location.href };
+        } else if (msg.kind === "rate") {
+          result = media
+            ? applyRate(media, Number(msg.delta) || Number(msg.rate) || 1)
+            : { ok: false, reason: "no-media", href: location.href };
         } else if (media) {
           result =
             msg.kind === "playPause"
@@ -1743,7 +1784,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
       return false;
     }
-    const result = msg.force ? UR.force(msg.action) : UR.tryNative(msg.action);
+    const result = msg.force ? UR.force(msg.action) : UR.tryNative(msg.action, msg.opts || {});
     sendResponse(result);
   } catch (err) {
     sendResponse({ ok: false, reason: String(err && err.message ? err.message : err) });
@@ -1766,6 +1807,19 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   let dragW = 0;
   let dragH = 0;
   let lastKnownPaused = true;
+  let advancedOpen = false;
+  let autoTimer = 0;
+  let autoRunning = false;
+  let autoInterval = 1000;
+  let currentRate = 1;
+  const RATE_PRESETS = [0.5, 1, 2, 16];
+  const INTERVAL_PRESETS = [
+    { ms: 50, label: "50ms" },
+    { ms: 500, label: "500ms" },
+    { ms: 1000, label: "1s" },
+    { ms: 10000, label: "10s" },
+    { ms: 60000, label: "1min" },
+  ];
 
   const existing = document.getElementById(UR.HOST_ID);
   if (existing && existing.shadowRoot && existing.shadowRoot.querySelector(".ur-root")) {
@@ -1867,7 +1921,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       document.addEventListener("pause", onMediaEvt, true);
       document.addEventListener("ended", onMediaEvt, true);
     }
-    window.addEventListener("beforeunload", () => window.clearInterval(scanTimer), { once: true });
+    window.addEventListener("beforeunload", () => {
+      window.clearInterval(scanTimer);
+      if (autoRunning) stopAutoNext();
+    }, { once: true });
   }
 
   function el(tag, attrs, children) {
@@ -1963,6 +2020,47 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             "下一页  ›",
           ]),
         ]),
+        el("button", { class: "ur-adv-toggle", "data-act": "advanced", type: "button" }, [
+          el("span", { class: "ur-adv-caret", text: "▸" }),
+          "高级",
+        ]),
+        el("div", { class: "ur-advanced", hidden: true }, [
+          el("div", { class: "ur-label", text: "倍速" }),
+          el(
+            "div",
+            { class: "ur-chips", "data-rate-chips": "1" },
+            RATE_PRESETS.map((n) =>
+              el("button", { class: "ur-chip" + (n === 1 ? " is-on" : ""), "data-rate": String(n), type: "button", text: n + "×" })
+            )
+          ),
+          el("div", { class: "ur-label", text: "自动下一页" }),
+          el(
+            "div",
+            { class: "ur-chips", "data-interval-chips": "1" },
+            INTERVAL_PRESETS.map((p) =>
+              el("button", {
+                class: "ur-chip" + (p.ms === 1000 ? " is-on" : ""),
+                "data-interval": String(p.ms),
+                type: "button",
+                text: p.label,
+              })
+            )
+          ),
+          el("div", { class: "ur-adv-custom" }, [
+            el("span", { text: "自定义" }),
+            el("input", {
+              class: "ur-interval-input",
+              type: "number",
+              min: "10",
+              max: "600000",
+              step: "1",
+              value: "1000",
+              title: "10–600000 毫秒",
+            }),
+            el("span", { text: "ms" }),
+            el("button", { class: "ur-auto-btn", "data-act": "auto-next", type: "button", text: "开始" }),
+          ]),
+        ]),
         el("div", { class: "ur-legend" }, [
           el("span", {}, [el("i", { class: "g" }), "识别到按钮"]),
           el("span", {}, [el("i", { class: "b" }), "可控制播放器"]),
@@ -1985,6 +2083,19 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
     shadow.appendChild(style);
     shadow.appendChild(root);
+    if (saved.advancedOpen) setAdvanced(true, false);
+    if (Number.isFinite(Number(saved.autoInterval))) setAutoInterval(Number(saved.autoInterval), false);
+    if (Number.isFinite(Number(saved.playbackRate)) && Number(saved.playbackRate) > 0) {
+      currentRate = Number(saved.playbackRate);
+      syncRateChips();
+    }
+    const intervalInput = shadow.querySelector(".ur-interval-input");
+    if (intervalInput) {
+      intervalInput.addEventListener("change", onCustomInterval);
+      intervalInput.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") onCustomInterval(ev);
+      });
+    }
     attachHost();
     watchHost();
     watchFullscreen();
@@ -2033,7 +2144,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   function onClick(event) {
-    const btn = event.target.closest("[data-act], [data-action], [data-force], [data-capture], [data-copy]");
+    const btn = event.target.closest("[data-act], [data-action], [data-force], [data-capture], [data-copy], [data-retry], [data-rate], [data-interval]");
     if (!btn) return;
     event.preventDefault();
     event.stopPropagation();
@@ -2044,6 +2155,27 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
     if (btn.dataset.act === "hide") {
       hidePanel();
+      return;
+    }
+    if (btn.dataset.act === "advanced") {
+      setAdvanced(!advancedOpen, true);
+      return;
+    }
+    if (btn.dataset.act === "auto-next") {
+      if (autoRunning) stopAutoNext("已停止自动下一页");
+      else startAutoNext();
+      return;
+    }
+    if (btn.dataset.rate) {
+      setPlaybackRate(Number(btn.dataset.rate));
+      return;
+    }
+    if (btn.dataset.interval) {
+      setAutoInterval(Number(btn.dataset.interval), true);
+      return;
+    }
+    if (btn.dataset.retry) {
+      tryOther(btn.dataset.retry);
       return;
     }
     if (btn.dataset.copy != null) {
@@ -2083,8 +2215,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     let result;
     if (force) {
       result = await execute(actionId, true);
-      if (result.ok) showToast(`已强制执行：${meta.label}。已绕过页面原逻辑，站点状态可能与显示不一致。使用强制跳过存在风险，请谨慎核对结果。`, "ok");
-      else showToast(`强制执行失败：${result.reason || "not_found"}${result.detail ? " " + result.detail : ""}`, "err");
+      if (result.ok) {
+        showToast(`已强制执行：${meta.label}。已绕过页面原逻辑，站点状态可能与显示不一致。使用强制跳过存在风险，请谨慎核对结果。`, "ok", {
+          retry: actionId,
+        });
+      } else {
+        showToast(`强制执行失败：${result.reason || "not_found"}${result.detail ? " " + result.detail : ""}`, "err");
+      }
       if (actionId === "playPause") rememberPlayState(result, true);
       refreshChrome();
       return;
@@ -2097,12 +2234,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         ? "已点击页面按钮（走页面原逻辑）"
         : method.indexOf("page-item") === 0
         ? "已强制切换页面（可能已跳过站点原逻辑）"
-        : method.indexOf("main-") === 0 || method === "media.currentTime"
+        : method.indexOf("main-") === 0 || method === "media.currentTime" || method === "media.rate"
           ? "已" + meta.label
           : result.method === "click"
             ? `已点击页面按钮：${meta.label}`
             : `已通过播放器执行：${meta.label}`;
-      showToast(how, "ok");
+      showToast(how + "\n若点错了，可尝试其它候选，或改为指定正确按钮。", "ok", { retry: actionId });
       if (actionId === "playPause") rememberPlayState(result, true);
       refreshChrome();
       return;
@@ -2111,7 +2248,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     showToast(
       `未找到「${meta.label}」对应按钮。连点遥控不会强制。\n\n使用强制跳过可能存在风险，请谨慎使用。强制执行会绕过页面原来的点击与校验流程，站点状态或数据可能与预期不符。`,
       "warn",
-      actionId
+      { force: actionId, retry: actionId }
     );
   }
 
@@ -2129,15 +2266,29 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     showToast("请点网页上当前这一屏的「" + label + "」按钮。点一次就记住，这次会正常跳转。", "warn");
   }
 
+  async function tryOther(actionId) {
+    const prev = lastHits.get(actionId);
+    if (prev) markTried(actionId, prev);
+    const result = await execute(actionId, false, { skipMedia: true, skipSpecial: true, skipTried: true });
+    if (result && result.ok) {
+      showToast("已改点另一个候选。若仍不对，可继续尝试或改为指定正确按钮。", "ok", { retry: actionId });
+      if (actionId === "playPause") rememberPlayState(result, true);
+    } else {
+      showToast("没有其它可点的候选按钮了。可改为指定页面上的正确按钮。", "warn", { force: actionId });
+    }
+    refreshChrome();
+  }
+
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local" || !changes[LEARN_KEY]) return;
     showToast("已记住本站按钮，以后会优先点击它。", "ok");
     refreshChrome();
   });
 
-  async function execute(actionId, force) {
+  async function execute(actionId, force, opts) {
     const meta = UR.ACTIONS[actionId];
-    if (meta && meta.group === "media") {
+    opts = opts || {};
+    if (meta && meta.group === "media" && !opts.skipMedia) {
       try {
         const media = await chrome.runtime.sendMessage({
           type: "UR_MEDIA",
@@ -2149,7 +2300,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         /* fall through */
       }
     }
-    if (meta && meta.group === "nav") {
+    if (meta && meta.group === "nav" && !opts.skipSpecial) {
       try {
         const posted = await pingCourseIframes(meta.dir, force);
         if (posted && posted.ok) return posted;
@@ -2168,12 +2319,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         /* fall through */
       }
     }
-    const local = force ? UR.force(actionId) : UR.tryNative(actionId);
+    const local = force ? UR.force(actionId) : UR.tryNative(actionId, opts);
     if (local && local.ok) return local;
     try {
       const remote = await chrome.runtime.sendMessage({
         type: "UR_BROADCAST",
-        payload: { action: actionId, force },
+        payload: { action: actionId, force, opts },
       });
       if (remote && remote.ok) return remote;
       return remote || local || { ok: false, reason: "not_found" };
@@ -2182,25 +2333,34 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
   }
 
-  function showToast(text, kind, forceAction) {
+  function showToast(text, kind, extra) {
     const box = shadow.querySelector(".ur-toast");
     box.className = "ur-toast " + (kind || "");
     box.hidden = false;
     while (box.firstChild) box.removeChild(box.firstChild);
     box.appendChild(el("div", { class: "ur-toast-text", text: String(text) }));
+    const opts = extra && typeof extra === "object" ? extra : extra ? { force: extra } : {};
+    const forceAction = opts.force;
+    const retryAction = opts.retry;
     const actions = [];
     if (kind === "err" || (text && String(text).length > 40)) {
       actions.push(el("button", { class: "ur-toast-learn", "data-copy": "1", text: "复制" }));
     }
+    if (retryAction) {
+      actions.push(el("button", { class: "ur-toast-alt", "data-retry": retryAction, text: "尝试其他可能按键" }));
+      actions.push(el("button", { class: "ur-toast-learn", "data-capture": retryAction, text: "改为指定某按键" }));
+    }
     if (forceAction) {
-      actions.push(el("button", { class: "ur-toast-learn", "data-capture": forceAction, text: "手动指定" }));
+      if (!retryAction) {
+        actions.push(el("button", { class: "ur-toast-learn", "data-capture": forceAction, text: "手动指定" }));
+      }
       actions.push(el("button", { class: "ur-toast-force", "data-force": forceAction, text: "强制执行（有风险）" }));
     }
     if (actions.length) box.appendChild(el("div", { class: "ur-toast-actions" }, actions));
     window.clearTimeout(toastTimer);
     toastTimer = window.setTimeout(() => {
       box.hidden = true;
-    }, kind === "err" ? 20000 : forceAction ? UR.CONFIRM_MS : 2600);
+    }, kind === "err" ? 20000 : forceAction || retryAction ? UR.CONFIRM_MS : 2600);
   }
 
   function rememberPlayState(result, toggleIfUnknown) {
@@ -2275,9 +2435,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       /* ignore */
     }
     const status = shadow.querySelector(".ur-status");
-    status.textContent = found.length
-      ? "已识别：" + found.join(" · ")
-      : "未识别到页面按钮，操作可能需要确认后强制执行";
+    if (autoRunning) {
+      status.textContent = "自动下一页中 · 每 " + formatInterval(autoInterval);
+    } else {
+      status.textContent = found.length
+        ? "已识别：" + found.join(" · ")
+        : "未识别到页面按钮，操作可能需要确认后强制执行";
+    }
   }
 
   function enableDrag(handle) {
@@ -2373,8 +2537,129 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   function hidePanel() {
+    if (autoRunning) stopAutoNext();
     root.classList.add("is-hidden");
     saveState();
+  }
+
+  function setAdvanced(open, persist) {
+    advancedOpen = !!open;
+    const box = shadow && shadow.querySelector(".ur-advanced");
+    const toggle = shadow && shadow.querySelector(".ur-adv-toggle");
+    if (box) box.hidden = !advancedOpen;
+    if (toggle) {
+      toggle.classList.toggle("is-open", advancedOpen);
+      const caret = toggle.querySelector(".ur-adv-caret");
+      if (caret) caret.textContent = advancedOpen ? "▾" : "▸";
+    }
+    if (root) root.classList.toggle("is-advanced", advancedOpen);
+    if (persist) {
+      saveState();
+      keepInView();
+    }
+  }
+
+  function clampInterval(ms) {
+    const n = Math.round(Number(ms));
+    if (!Number.isFinite(n)) return 1000;
+    return Math.min(600000, Math.max(10, n));
+  }
+
+  function setAutoInterval(ms, persist) {
+    autoInterval = clampInterval(ms);
+    const input = shadow && shadow.querySelector(".ur-interval-input");
+    if (input && document.activeElement !== input) input.value = String(autoInterval);
+    if (shadow) {
+      for (const chip of shadow.querySelectorAll("[data-interval]")) {
+        chip.classList.toggle("is-on", Number(chip.dataset.interval) === autoInterval);
+      }
+    }
+    if (persist) saveState();
+  }
+
+  function onCustomInterval(event) {
+    const input = event.target;
+    const next = clampInterval(input.value);
+    input.value = String(next);
+    setAutoInterval(next, true);
+  }
+
+  function syncRateChips() {
+    if (!shadow) return;
+    for (const chip of shadow.querySelectorAll("[data-rate]")) {
+      chip.classList.toggle("is-on", Number(chip.dataset.rate) === currentRate);
+    }
+  }
+
+  async function setPlaybackRate(rate) {
+    const n = Number(rate);
+    if (!Number.isFinite(n) || n <= 0) return;
+    currentRate = n;
+    syncRateChips();
+    saveState();
+    try {
+      const remote = await chrome.runtime.sendMessage({ type: "UR_MEDIA", kind: "rate", rate: n });
+      if (remote && remote.ok) {
+        showToast("已将播放速度设为 " + n + "×", "ok");
+        return;
+      }
+    } catch {
+      /* fall through */
+    }
+    const media = UR.getMediaState && getPrimaryMedia();
+    const local = media ? applyRate(media, n) : { ok: false };
+    if (local.ok) showToast("已将播放速度设为 " + n + "×", "ok");
+    else showToast("未找到可调速的播放器。", "warn");
+  }
+
+  function formatInterval(ms) {
+    if (ms >= 60000 && ms % 60000 === 0) return ms / 60000 + "min";
+    if (ms >= 1000 && ms % 1000 === 0) return ms / 1000 + "s";
+    return ms + "ms";
+  }
+
+  function updateAutoBtn() {
+    const btn = shadow && shadow.querySelector('[data-act="auto-next"]');
+    if (btn) {
+      btn.textContent = autoRunning ? "停止" : "开始";
+      btn.classList.toggle("is-on", autoRunning);
+    }
+    const status = shadow && shadow.querySelector(".ur-status");
+    if (status && autoRunning) {
+      status.textContent = "自动下一页中 · 每 " + formatInterval(autoInterval);
+    }
+  }
+
+  function stopAutoNext(msg) {
+    autoRunning = false;
+    if (autoTimer) {
+      window.clearTimeout(autoTimer);
+      autoTimer = 0;
+    }
+    updateAutoBtn();
+    if (msg) showToast(msg, "ok");
+  }
+
+  function startAutoNext() {
+    stopAutoNext();
+    autoRunning = true;
+    updateAutoBtn();
+    const tick = async () => {
+      if (!autoRunning || !extAlive() || globalThis.__urBootId !== UR_BOOT) {
+        stopAutoNext();
+        return;
+      }
+      const result = await execute("nextPage", false);
+      if (!autoRunning) return;
+      if (!result || !result.ok) {
+        stopAutoNext();
+        showToast("自动下一页已停止：未找到可点的按钮。", "warn", { force: "nextPage", retry: "nextPage" });
+        return;
+      }
+      updateAutoBtn();
+      autoTimer = window.setTimeout(tick, autoInterval);
+    };
+    tick();
   }
 
   async function loadState() {
@@ -2395,6 +2680,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       top: Number.isFinite(rect.top) ? rect.top : 24,
       minimized: root.classList.contains("is-min"),
       hidden: root.classList.contains("is-hidden"),
+      advancedOpen: advancedOpen,
+      autoInterval: autoInterval,
+      playbackRate: currentRate,
     };
     if (!extAlive()) return;
     try {

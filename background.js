@@ -298,6 +298,44 @@ function mediaControlInPage(kind, delta) {
     if (!media) return { ok: false, exists: false, paused: true, href: location.href };
     return { ok: true, exists: true, paused: !!(media.paused || media.ended), href: location.href };
   }
+  if (kind === "rate") {
+    if (!media) return { ok: false, reason: "no-media", href: location.href };
+    const rate = Number(delta);
+    if (!Number.isFinite(rate) || rate <= 0) return { ok: false, reason: "bad-rate" };
+    try {
+      media.playbackRate = rate;
+    } catch (e) {
+      return { ok: false, reason: "rate-throw" };
+    }
+    const root =
+      media.closest &&
+      media.closest(".xgplayer, .dplayer, .jwplayer, .plyr, .bpx-player, #movie_player, .video-js");
+    const player = root && (root.player || root.__player || root.xgplayer);
+    if (player) {
+      try {
+        if (typeof player.playbackRate === "function") player.playbackRate(rate);
+        else player.playbackRate = rate;
+      } catch (e) {
+        /* ignore */
+      }
+    }
+    const yt = document.getElementById("movie_player");
+    if (yt && typeof yt.setPlaybackRate === "function") {
+      try {
+        yt.setPlaybackRate(rate);
+      } catch (e) {
+        /* ignore */
+      }
+    }
+    return {
+      ok: true,
+      method: "main-rate",
+      rate: media.playbackRate || rate,
+      exists: true,
+      paused: !!(media.paused || media.ended),
+      href: location.href,
+    };
+  }
   if (!media) return { ok: false, reason: "no-media", href: location.href };
   if (kind === "playPause") return applyPlayPause(media);
   return applySeek(media, Number(delta) || 0);
@@ -362,7 +400,7 @@ function mediaViaPorts(kind, delta) {
       };
       port.onMessage.addListener(onMsg);
       try {
-        port.postMessage({ type: "MEDIA", kind, delta });
+        port.postMessage({ type: "MEDIA", kind, delta: delta });
         void chrome.runtime.lastError;
       } catch {
         left -= 1;
@@ -619,7 +657,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "UR_MEDIA") {
     const tabId = sender.tab.id;
     const kind = msg.kind || "seek";
-    const delta = msg.delta || 0;
+    const delta = kind === "rate" ? Number(msg.rate) : msg.delta || 0;
     (async () => {
       const viaPort = await mediaViaPorts(kind, delta);
       if (viaPort && viaPort.ok) return viaPort;
