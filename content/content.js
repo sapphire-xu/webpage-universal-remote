@@ -29,7 +29,7 @@ function extDead(err) {
 var UR = {
   HOST_ID: "universal-remote-host",
   CONFIRM_MS: 16000,
-  VERSION: "1.4.4",
+  VERSION: "1.4.5",
 };
 try {
   UR.VERSION = chrome.runtime.getManifest().version || UR.VERSION;
@@ -1897,6 +1897,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   let lastKnownPaused = true;
   let actionLock = false;
   let toastConsuming = false;
+  let cssAnimWatching = false;
+  let cssAnimRate = 1;
+  let cssAnimKind = "rate";
   let advancedOpen = false;
   let autoTimer = 0;
   let autoRunning = false;
@@ -2172,6 +2175,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
               title: "把视口内正在播放的有限次 CSS 动画跳到结束",
               text: "跳过当前动画",
             }),
+            el("button", {
+              class: "ur-auto-btn",
+              "data-act": "css-anim-watch",
+              type: "button",
+              title: "每 0.1 秒对当前动画再执行一次上次的倍速或跳过",
+              text: "持续检查",
+            }),
           ]),
           // --- CSS anim feature end ---
           el("div", { class: "ur-label", text: "指定按钮" }),
@@ -2293,6 +2303,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
     if (btn.dataset.act === "css-anim-skip") {
       runCssAnim("skip");
+      return;
+    }
+    if (btn.dataset.act === "css-anim-watch") {
+      toggleCssAnimWatch();
       return;
     }
     if (btn.dataset.animRate) {
@@ -2626,6 +2640,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     const status = shadow.querySelector(".ur-status");
     if (autoRunning) {
       status.textContent = "自动下一页中 · 每 " + formatInterval(autoInterval);
+    } else if (cssAnimWatching) {
+      status.textContent =
+        cssAnimKind === "skip"
+          ? "CSS 动画持续检查中 · 每 0.1s 跳过"
+          : "CSS 动画持续检查中 · 每 0.1s " + cssAnimRate + "×";
     } else {
       status.textContent = found.length
         ? "已识别：" + found.join(" · ")
@@ -2728,6 +2747,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   function hidePanel() {
     if (autoRunning) stopAutoNext();
+    if (cssAnimWatching) {
+      cssAnimWatching = false;
+      syncCssAnimWatchBtn();
+      try {
+        chrome.runtime.sendMessage({ type: "UR_CSS_ANIM", kind: "unwatch" }).catch(() => {});
+      } catch {
+        /* ignore */
+      }
+    }
     root.classList.add("is-hidden");
     saveState();
   }
@@ -2789,20 +2817,75 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
   }
 
-  async function runCssAnim(kind, rate) {
-    showToast(kind === "skip" ? "正在跳过 CSS 动画…" : "正在设置 CSS 动画速度…", "info", { busy: true });
+  function syncCssAnimWatchBtn() {
+    const btn = shadow && shadow.querySelector('[data-act="css-anim-watch"]');
+    if (btn) {
+      btn.classList.toggle("is-on", cssAnimWatching);
+      btn.textContent = cssAnimWatching ? "停止检查" : "持续检查";
+    }
+  }
+
+  async function toggleCssAnimWatch() {
+    cssAnimWatching = !cssAnimWatching;
+    syncCssAnimWatchBtn();
     try {
-      const res = await chrome.runtime.sendMessage({ type: "UR_CSS_ANIM", kind, rate });
-      if (kind === "rate") syncAnimRateChips(rate);
-      if (res && res.ok) {
+      if (cssAnimWatching) {
+        await chrome.runtime.sendMessage({
+          type: "UR_CSS_ANIM",
+          kind: "watch",
+          apply: cssAnimKind,
+          rate: cssAnimRate,
+        });
         showToast(
-          kind === "skip"
-            ? "已跳过 " + res.count + " 段视口内的 CSS 动画。"
-            : "已将 " + res.count + " 段 CSS 动画设为 " + rate + "×。",
+          cssAnimKind === "skip"
+            ? "已开启持续检查：每 0.1 秒跳过视口内新出现的 CSS 动画。"
+            : "已开启持续检查：每 0.1 秒把 CSS 动画设为 " + cssAnimRate + "×。",
           "ok"
         );
       } else {
-        showToast("没有找到可控制的 CSS 动画（脚本/画布动画不在此功能范围内）。", "warn");
+        await chrome.runtime.sendMessage({ type: "UR_CSS_ANIM", kind: "unwatch" });
+        showToast("已关闭 CSS 动画持续检查。", "ok");
+      }
+    } catch {
+      cssAnimWatching = false;
+      syncCssAnimWatchBtn();
+      showToast("无法切换持续检查。", "err");
+    }
+    refreshChrome();
+  }
+
+  async function runCssAnim(kind, rate) {
+    if (kind === "rate") {
+      cssAnimKind = "rate";
+      cssAnimRate = Number(rate) || 1;
+      syncAnimRateChips(cssAnimRate);
+    } else {
+      cssAnimKind = "skip";
+    }
+    const sendKind = cssAnimWatching ? "watch" : kind;
+    showToast(kind === "skip" ? "正在跳过 CSS 动画…" : "正在设置 CSS 动画速度…", "info", { busy: true });
+    try {
+      const res = await chrome.runtime.sendMessage({
+        type: "UR_CSS_ANIM",
+        kind: sendKind,
+        apply: cssAnimKind,
+        rate: cssAnimRate,
+      });
+      if (res && res.ok) {
+        const extra = cssAnimWatching ? " 持续检查已开，新动画也会套用。" : "";
+        showToast(
+          kind === "skip"
+            ? "已跳过 " + (res.count || 0) + " 段视口内的 CSS 动画。" + extra
+            : "已将 " + (res.count || 0) + " 段 CSS 动画设为 " + cssAnimRate + "×。" + extra,
+          "ok"
+        );
+      } else {
+        showToast(
+          cssAnimWatching
+            ? "当前没有动画，已记下设置，新动画出现后会自动处理。"
+            : "没有找到可控制的 CSS 动画（脚本/画布动画不在此功能范围内）。",
+          cssAnimWatching ? "ok" : "warn"
+        );
       }
     } catch {
       showToast("CSS 动画操作失败。", "err");

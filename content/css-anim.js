@@ -143,7 +143,40 @@
     return { ok: count > 0, count, kind: "skip" };
   }
 
+  let watchTimer = 0;
+  let watchKind = "rate";
+  let watchRate = 1;
+
+  function tick() {
+    if (watchKind === "skip") return applySkip();
+    return applyRate(watchRate);
+  }
+
+  function startWatch(kind, rate) {
+    watchKind = kind === "skip" ? "skip" : "rate";
+    const n = Number(rate);
+    if (Number.isFinite(n) && n > 0) watchRate = n;
+    if (!watchTimer) {
+      watchTimer = setInterval(tick, 100);
+    }
+    return tick();
+  }
+
+  function stopWatch() {
+    if (watchTimer) {
+      clearInterval(watchTimer);
+      watchTimer = 0;
+    }
+    return { ok: true, count: 0, kind: "unwatch" };
+  }
+
   function handle(kind, rate) {
+    if (kind === "unwatch") return stopWatch();
+    if (watchTimer) {
+      watchKind = kind === "skip" ? "skip" : "rate";
+      const n = Number(rate);
+      if (Number.isFinite(n) && n > 0) watchRate = n;
+    }
     if (kind === "skip") return applySkip();
     return applyRate(rate);
   }
@@ -152,7 +185,11 @@
     chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (!msg || msg.type !== "UR_CSS_ANIM") return false;
       try {
-        sendResponse(handle(msg.kind, msg.rate));
+        if (msg.kind === "watch") {
+          sendResponse(startWatch(msg.apply || "rate", msg.rate));
+        } else {
+          sendResponse(handle(msg.kind, msg.rate));
+        }
       } catch (err) {
         sendResponse({ ok: false, count: 0, reason: String(err && err.message ? err.message : err) });
       }
@@ -161,4 +198,6 @@
   } catch {
     /* ignore */
   }
+
+  window.addEventListener("pagehide", () => stopWatch());
 })();

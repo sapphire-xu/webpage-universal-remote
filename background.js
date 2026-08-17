@@ -352,6 +352,7 @@ function isCourseFrame(url) {
 }
 
 const framePorts = new Set();
+const cssAnimWatch = new Map();
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== "ur-frame") return;
   framePorts.add(port);
@@ -364,6 +365,12 @@ chrome.runtime.onConnect.addListener((port) => {
     framePorts.delete(port);
   });
 });
+
+try {
+  chrome.tabs.onRemoved.addListener((tabId) => cssAnimWatch.delete(tabId));
+} catch {
+  /* ignore */
+}
 
 function mediaViaPorts(kind, delta) {
   return new Promise((resolve) => {
@@ -544,20 +551,30 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const tabId = sender.tab.id;
     const kind = msg.kind || "rate";
     const rate = msg.rate;
+    const apply = msg.apply || (kind === "skip" ? "skip" : "rate");
+    if (kind === "watch") cssAnimWatch.set(tabId, { apply, rate });
+    else if (kind === "unwatch") cssAnimWatch.delete(tabId);
+    else if (cssAnimWatch.has(tabId) && (kind === "rate" || kind === "skip")) {
+      cssAnimWatch.set(tabId, { apply: kind === "skip" ? "skip" : "rate", rate });
+    }
     (async () => {
       const frameIds = await listFrameIds(tabId);
       let count = 0;
       let hit = false;
       for (const frameId of frameIds) {
         try {
-          const res = await chrome.tabs.sendMessage(tabId, { type: "UR_CSS_ANIM", kind, rate }, { frameId });
+          const res = await chrome.tabs.sendMessage(
+            tabId,
+            { type: "UR_CSS_ANIM", kind, rate, apply },
+            { frameId }
+          );
           if (res && res.count) count += Number(res.count) || 0;
           if (res && res.ok) hit = true;
         } catch {
           /* no script in this frame */
         }
       }
-      return { ok: hit || count > 0, count, kind };
+      return { ok: hit || count > 0 || kind === "watch" || kind === "unwatch", count, kind };
     })()
       .then(sendResponse)
       .catch(() => sendResponse({ ok: false, count: 0 }));
@@ -579,6 +596,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       hasActive: !!msg.hasActive,
       iframes: msg.iframes || [],
     });
+    // --- CSS anim feature start ---
+    const watch = cssAnimWatch.get(sender.tab.id);
+    if (watch && sender.frameId != null) {
+      chrome.tabs
+        .sendMessage(
+          sender.tab.id,
+          { type: "UR_CSS_ANIM", kind: "watch", apply: watch.apply, rate: watch.rate },
+          { frameId: sender.frameId }
+        )
+        .catch(() => {});
+    }
+    // --- CSS anim feature end ---
     sendResponse({ ok: true });
     return false;
   }
