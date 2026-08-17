@@ -389,6 +389,16 @@
   color: #fff;
 }
 
+.ur-chip.danger {
+  background: rgba(226, 75, 75, 0.18);
+  color: #ffd4d4;
+}
+
+.ur-chip.danger:hover {
+  background: #e24b4b;
+  color: #fff;
+}
+
 .ur-auto-btn.is-on {
   background: #e24b4b;
 }

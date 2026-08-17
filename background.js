@@ -530,11 +530,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || !sender.tab || sender.tab.id == null) return;
 
   if (msg.type === "UR_SAVE_LEARNED") {
+    const data = { "ur-learned": msg.learned || {} };
+    if (msg.pending) data["ur-pending-toast"] = msg.pending;
     chrome.storage.local
-      .set({
-        "ur-learned": msg.learned || {},
-        "ur-pending-toast": msg.pending || null,
-      })
+      .set(data)
       .then(() => sendResponse({ ok: true }))
       .catch(() => sendResponse({ ok: false }));
     return true;

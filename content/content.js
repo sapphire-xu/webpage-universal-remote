@@ -29,7 +29,7 @@ function extDead(err) {
 var UR = {
   HOST_ID: "universal-remote-host",
   CONFIRM_MS: 16000,
-  VERSION: "1.4.1",
+  VERSION: "1.4.2",
 };
 try {
   UR.VERSION = chrome.runtime.getManifest().version || UR.VERSION;
@@ -398,11 +398,36 @@ const NEGATIVE = [
 ];
 
 function isOurHost(el) {
-  if (!el || !el.closest) return false;
-  if (el.closest("#" + UR.HOST_ID)) return true;
-  const root = el.getRootNode && el.getRootNode();
-  if (root && root.host && root.host.id === UR.HOST_ID) return true;
+  if (!el) return false;
+  if (el.id === UR.HOST_ID) return true;
+  try {
+    if (el.closest && el.closest("#" + UR.HOST_ID)) return true;
+  } catch {
+    /* ignore */
+  }
+  try {
+    const root = el.getRootNode && el.getRootNode();
+    if (root && root.host && root.host.id === UR.HOST_ID) return true;
+  } catch {
+    /* ignore */
+  }
   return false;
+}
+
+function isOurEvent(event) {
+  if (!event) return false;
+  try {
+    const path = event.composedPath ? event.composedPath() : [];
+    for (let i = 0; i < path.length; i++) {
+      const n = path[i];
+      if (!n) continue;
+      if (n.id === UR.HOST_ID) return true;
+      if (n.host && n.host.id === UR.HOST_ID) return true;
+    }
+  } catch {
+    /* ignore */
+  }
+  return isOurHost(event.target);
 }
 
 function queryAllDeep(selector, root = document) {
@@ -1102,7 +1127,39 @@ function findLearned(actionId) {
   return null;
 }
 
+function persistLearned(pending) {
+  try {
+    const payload = { [LEARN_KEY]: UR.learned };
+    if (pending) payload[PENDING_TOAST_KEY] = pending;
+    chrome.storage.local.set(payload).catch(() => {});
+  } catch {
+    /* ignore */
+  }
+  try {
+    chrome.runtime.sendMessage({ type: "UR_SAVE_LEARNED", learned: UR.learned, pending: pending || null }, () => {
+      try {
+        void chrome.runtime.lastError;
+      } catch {
+        /* ignore */
+      }
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
+function reportCapture(ok, text, actionId) {
+  persistLearned({
+    ts: Date.now(),
+    text: String(text),
+    kind: ok ? "ok" : "err",
+    extra: { retry: actionId },
+    actionId,
+  });
+}
+
 function saveLearned(actionId, el) {
+  if (!el || el.nodeType !== 1 || isOurHost(el)) return null;
   const rec = {
     css: uniqueSelector(el),
     tag: el.tagName,
@@ -1113,37 +1170,33 @@ function saveLearned(actionId, el) {
     text: getOwnText(el).slice(0, 40),
     outer: String(el.outerHTML || "").slice(0, 600),
   };
-  const keys = [pageKey(), hostname()];
+  const keys = [pageKey(), hostname()].filter(Boolean);
+  if (!keys.length) return null;
   for (const key of keys) {
     if (!UR.learned[key]) UR.learned[key] = {};
     UR.learned[key][actionId] = rec;
   }
-  const pending = {
-    ts: Date.now(),
-    text: "已记住指定的按钮。跳转后仍可改指定。",
-    kind: "ok",
-    extra: { retry: actionId },
-    actionId,
-  };
-  try {
-    chrome.storage.local.set({ [LEARN_KEY]: UR.learned, [PENDING_TOAST_KEY]: pending }).catch(() => {});
-  } catch {
-    /* ignore */
-  }
-  try {
-    chrome.runtime.sendMessage({ type: "UR_SAVE_LEARNED", learned: UR.learned, pending }, () => {
-      try {
-        void chrome.runtime.lastError;
-      } catch {
-        /* ignore */
-      }
-    });
-  } catch {
-    /* ignore */
-  }
+  reportCapture(true, "指定成功：已记住这个按钮。跳转后仍可改指定。", actionId);
   clearTried(actionId);
   return rec;
 }
+
+function siteLearnKeys() {
+  const host = hostname();
+  const keys = Object.keys(UR.learned || {});
+  if (host) {
+    return keys.filter((k) => k === host || k.indexOf(host + "/") === 0 || k.indexOf(host + "#") === 0);
+  }
+  const pk = pageKey();
+  return keys.filter((k) => k === pk);
+}
+
+UR.clearSiteLearned = function clearSiteLearned() {
+  const keys = siteLearnKeys();
+  for (const key of keys) delete UR.learned[key];
+  persistLearned(null);
+  return keys.length;
+};
 
 let captureHandler = null;
 UR.startCapture = function startCapture(actionId) {
@@ -1152,10 +1205,20 @@ UR.startCapture = function startCapture(actionId) {
     captureHandler = null;
   }
   captureHandler = (event) => {
-    if (isOurHost(event.target)) return;
+    if (isOurEvent(event) || isOurHost(event.target)) {
+      reportCapture(false, "指定失败：不能指定遥控器自己的按钮，请点网页上的按钮。", actionId);
+      return;
+    }
     const el = closestClickable(event.target) || event.target;
-    if (!el || el.nodeType !== 1) return;
-    saveLearned(actionId, el);
+    if (!el || el.nodeType !== 1 || isOurHost(el)) {
+      reportCapture(false, "指定失败：没有点到可用的页面按钮。", actionId);
+      return;
+    }
+    const rec = saveLearned(actionId, el);
+    if (!rec) {
+      reportCapture(false, "指定失败：无法记住这个按钮。", actionId);
+      return;
+    }
     document.removeEventListener("click", captureHandler, true);
     captureHandler = null;
   };
@@ -2088,6 +2151,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             el("button", { class: "ur-chip", "data-capture": "prevPage", type: "button", text: "指定上一页" }),
             el("button", { class: "ur-chip", "data-capture": "nextPage", type: "button", text: "指定下一页" }),
             el("button", { class: "ur-chip", "data-capture": "playPause", type: "button", text: "指定播放" }),
+            el("button", { class: "ur-chip danger", "data-act": "clear-learned", type: "button", text: "删除本网站所有指定" }),
           ]),
         ]),
         el("div", { class: "ur-legend" }, [
@@ -2197,6 +2261,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (btn.dataset.act === "auto-next") {
       if (autoRunning) stopAutoNext("已停止自动下一页");
       else startAutoNext();
+      return;
+    }
+    if (btn.dataset.act === "clear-learned") {
+      const n = UR.clearSiteLearned();
+      showToast(n ? "已删除本网站的全部指定按钮。" : "本网站还没有指定过按钮。", "ok");
+      refreshChrome();
       return;
     }
     if (btn.dataset.rate) {
@@ -2552,7 +2622,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
     handle.addEventListener("pointerdown", (event) => {
       if (event.button !== 0) return;
-      if (event.target.closest("button")) return;
+      const innerBtn = event.target.closest && event.target.closest("button");
+      if (innerBtn && innerBtn !== handle) return;
       draggingOverlay = true;
       const rect = root.getBoundingClientRect();
       sx = event.clientX;
