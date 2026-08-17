@@ -29,7 +29,7 @@ function extDead(err) {
 var UR = {
   HOST_ID: "universal-remote-host",
   CONFIRM_MS: 16000,
-  VERSION: "1.4.5",
+  VERSION: "1.4.6",
 };
 try {
   UR.VERSION = chrome.runtime.getManifest().version || UR.VERSION;
@@ -399,7 +399,7 @@ const NEGATIVE = [
 
 function isOurHost(el) {
   if (!el) return false;
-  if (el.id === UR.HOST_ID) return true;
+  if (el.id === UR.HOST_ID || (el.getAttribute && el.getAttribute("data-ur-host"))) return true;
   try {
     if (el.closest && el.closest("#" + UR.HOST_ID)) return true;
   } catch {
@@ -1108,22 +1108,25 @@ function findLearned(actionId) {
     (UR.learned[pageKey()] && UR.learned[pageKey()][actionId]) ||
     (UR.learned[hostname()] && UR.learned[hostname()][actionId]);
   if (!rec) return null;
+  if (rec.css && /universal-remote-host|\.ur-/.test(rec.css)) return null;
+  const pick = (list) =>
+    (list || []).find((el) => el && !isOurHost(el) && isVisible(el, { allowHiddenChrome: true })) ||
+    (list || []).find((el) => el && !isOurHost(el)) ||
+    null;
   if (rec.css) {
     try {
-      const found = queryAllDeep(rec.css);
-      const visible = found.find((el) => isVisible(el, { allowHiddenChrome: true }));
-      if (visible) return visible;
-      if (found[0]) return found[0];
+      const hit = pick(queryAllDeep(rec.css));
+      if (hit) return hit;
     } catch {
       /* ignore */
     }
   }
   if (rec.title) {
-    const hit = queryAllDeep('[title="' + cssEscapeAttr(rec.title) + '"]')[0];
+    const hit = pick(queryAllDeep('[title="' + cssEscapeAttr(rec.title) + '"]'));
     if (hit) return hit;
   }
   if (rec.aria) {
-    const hit = queryAllDeep('[aria-label="' + cssEscapeAttr(rec.aria) + '"]')[0];
+    const hit = pick(queryAllDeep('[aria-label="' + cssEscapeAttr(rec.aria) + '"]'));
     if (hit) return hit;
   }
   return null;
@@ -1172,6 +1175,7 @@ function saveLearned(actionId, el) {
     text: getOwnText(el).slice(0, 40),
     outer: String(el.outerHTML || "").slice(0, 600),
   };
+  if (/universal-remote-host|[.#]ur-/.test(rec.css || "") || /\bur-/.test(rec.className || "")) return null;
   const keys = [pageKey(), hostname()].filter(Boolean);
   if (!keys.length) return null;
   for (const key of keys) {
@@ -1905,6 +1909,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   let autoRunning = false;
   let autoInterval = 1000;
   let currentRate = 1;
+  let overlayScale = 1;
+  const SCALE_PRESETS = [0.75, 0.9, 1, 1.15, 1.3];
   const RATE_PRESETS = [0.5, 1, 2, 16];
   const INTERVAL_PRESETS = [
     { ms: 50, label: "50ms" },
@@ -2118,6 +2124,27 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           "高级",
         ]),
         el("div", { class: "ur-advanced", hidden: true }, [
+          el("div", { class: "ur-label", text: "遥控器大小" }),
+          el(
+            "div",
+            { class: "ur-chips", "data-scale-chips": "1" },
+            SCALE_PRESETS.map((n) =>
+              el("button", {
+                class: "ur-chip" + (n === 1 ? " is-on" : ""),
+                "data-scale": String(n),
+                type: "button",
+                text: Math.round(n * 100) + "%",
+              })
+            )
+          ),
+          el("div", { class: "ur-label", text: "操作安全性" }),
+          el("div", { class: "ur-safety" }, [
+            el("div", { text: "★★☆☆☆  音视频快进/倍速：站点若有计时检查，可能导致错误" }),
+            el("div", { text: "★★★☆☆  上一页/下一页：可能跳过必做步骤，但可以自行核对" }),
+            el("div", { text: "★☆☆☆☆  强制翻页：极有可能造成错误，请谨慎" }),
+            el("div", { text: "★★☆☆☆  自动下一页：过快可能跳过必做步骤，且来不及检查" }),
+            el("div", { text: "★★★★☆  CSS 动画倍速/跳过：后台几乎不检查此类动画，一般不易出错" }),
+          ]),
           el("div", { class: "ur-label", text: "倍速" }),
           el(
             "div",
@@ -2214,6 +2241,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
     shadow.appendChild(style);
     shadow.appendChild(root);
+    if (Number.isFinite(Number(saved.overlayScale)) && Number(saved.overlayScale) > 0) {
+      setOverlayScale(Number(saved.overlayScale), false);
+    }
     if (saved.advancedOpen) setAdvanced(true, false);
     if (Number.isFinite(Number(saved.autoInterval))) setAutoInterval(Number(saved.autoInterval), false);
     if (Number.isFinite(Number(saved.playbackRate)) && Number(saved.playbackRate) > 0) {
@@ -2278,7 +2308,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   function onClick(event) {
-    const btn = event.target.closest("[data-act], [data-action], [data-force], [data-capture], [data-copy], [data-retry], [data-rate], [data-interval], [data-anim-rate]");
+    const btn = event.target.closest("[data-act], [data-action], [data-force], [data-capture], [data-copy], [data-retry], [data-rate], [data-interval], [data-anim-rate], [data-scale]");
     if (!btn) return;
     event.preventDefault();
     event.stopPropagation();
@@ -2317,6 +2347,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       const n = UR.clearSiteLearned();
       showToast(n ? "已删除本网站的全部指定按钮。" : "本网站还没有指定过按钮。", "ok");
       refreshChrome();
+      return;
+    }
+    if (btn.dataset.scale) {
+      setOverlayScale(Number(btn.dataset.scale), true);
       return;
     }
     if (btn.dataset.rate) {
@@ -2760,6 +2794,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     saveState();
   }
 
+  function setOverlayScale(scale, persist) {
+    const n = Number(scale);
+    overlayScale = Number.isFinite(n) && n >= 0.5 && n <= 2 ? n : 1;
+    if (root) root.style.setProperty("--ur-scale", String(overlayScale));
+    if (shadow) {
+      for (const chip of shadow.querySelectorAll("[data-scale]")) {
+        chip.classList.toggle("is-on", Math.abs(Number(chip.dataset.scale) - overlayScale) < 0.001);
+      }
+    }
+    if (persist) {
+      saveState();
+      keepInView();
+    }
+  }
+
   function setAdvanced(open, persist) {
     advancedOpen = !!open;
     const box = shadow && shadow.querySelector(".ur-advanced");
@@ -2985,6 +3034,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       advancedOpen: advancedOpen,
       autoInterval: autoInterval,
       playbackRate: currentRate,
+      overlayScale: overlayScale,
     };
     if (!extAlive()) return;
     try {
