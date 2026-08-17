@@ -546,7 +546,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  // --- CSS anim feature start (delete with content/css-anim.js) ---
+  // CSS animation speed / skip
   if (msg.type === "UR_CSS_ANIM") {
     const tabId = sender.tab.id;
     const kind = msg.kind || "rate";
@@ -580,7 +580,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .catch(() => sendResponse({ ok: false, count: 0 }));
     return true;
   }
-  // --- CSS anim feature end ---
 
   if (msg.type === "UR_BROADCAST") {
     relayToFrames(sender.tab.id, sender.frameId ?? 0, msg.payload)
@@ -596,7 +595,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       hasActive: !!msg.hasActive,
       iframes: msg.iframes || [],
     });
-    // --- CSS anim feature start ---
+    // CSS animation watch follow-up
     const watch = cssAnimWatch.get(sender.tab.id);
     if (watch && sender.frameId != null) {
       chrome.tabs
@@ -607,7 +606,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         )
         .catch(() => {});
     }
-    // --- CSS anim feature end ---
     sendResponse({ ok: true });
     return false;
   }

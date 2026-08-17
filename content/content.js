@@ -29,7 +29,7 @@ function extDead(err) {
 var UR = {
   HOST_ID: "universal-remote-host",
   CONFIRM_MS: 16000,
-  VERSION: "1.4.7",
+  VERSION: "1.4.8",
 };
 try {
   UR.VERSION = chrome.runtime.getManifest().version || UR.VERSION;
@@ -2086,7 +2086,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       el("div", { class: "ur-scale" }, [
       el("div", { class: "ur-toast", hidden: true }),
       el("section", { class: "ur-panel" }, [
-        el("header", { class: "ur-head" }, [
+        el("header", { class: "ur-head", "data-ur-drag": "1" }, [
           el("img", { class: "ur-logo", alt: "", src: chrome.runtime.getURL("icons/icon48.png") }),
           el("div", { class: "ur-title" }, [
             "万能遥控",
@@ -2125,20 +2125,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           "高级",
         ]),
         el("div", { class: "ur-advanced", hidden: true }, [
-          el("div", { class: "ur-label", text: "遥控器大小" }),
-          el(
-            "div",
-            { class: "ur-chips", "data-scale-chips": "1" },
-            SCALE_PRESETS.map((n) =>
-              el("button", {
-                class: "ur-chip" + (n === 1 ? " is-on" : ""),
-                "data-scale": String(n),
-                type: "button",
-                text: Math.round(n * 100) + "%",
-              })
-            )
-          ),
-          el("div", { class: "ur-label", text: "倍速" }),
+          el("div", { class: "ur-label", text: "音视频倍速" }),
           el(
             "div",
             { class: "ur-chips", "data-rate-chips": "1" },
@@ -2146,36 +2133,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
               el("button", { class: "ur-chip" + (n === 1 ? " is-on" : ""), "data-rate": String(n), type: "button", text: n + "×" })
             )
           ),
-          el("div", { class: "ur-label", text: "自动下一页" }),
-          el(
-            "div",
-            { class: "ur-chips", "data-interval-chips": "1" },
-            INTERVAL_PRESETS.map((p) =>
-              el("button", {
-                class: "ur-chip" + (p.ms === 1000 ? " is-on" : ""),
-                "data-interval": String(p.ms),
-                type: "button",
-                text: p.label,
-              })
-            )
-          ),
-          el("div", { class: "ur-adv-custom" }, [
-            el("span", { text: "自定义" }),
-            el("input", {
-              class: "ur-interval-input",
-              type: "number",
-              min: "10",
-              max: "600000",
-              step: "1",
-              value: "1000",
-              title: "10–600000 毫秒",
-            }),
-            el("span", { text: "ms" }),
-            el("button", { class: "ur-auto-btn", "data-act": "auto-next", type: "button", text: "开始" }),
-          ]),
-          // --- CSS anim feature start (delete with content/css-anim.js) ---
           el("div", { class: "ur-css-anim" }, [
-            el("div", { class: "ur-label", text: "CSS 动画（试验）" }),
+            el("div", { class: "ur-label", text: "CSS 动画" }),
             el(
               "div",
               { class: "ur-chips", "data-anim-rate-chips": "1" },
@@ -2203,7 +2162,33 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
               text: "持续检查",
             }),
           ]),
-          // --- CSS anim feature end ---
+          el("div", { class: "ur-label", text: "自动下一页" }),
+          el(
+            "div",
+            { class: "ur-chips", "data-interval-chips": "1" },
+            INTERVAL_PRESETS.map((p) =>
+              el("button", {
+                class: "ur-chip" + (p.ms === 1000 ? " is-on" : ""),
+                "data-interval": String(p.ms),
+                type: "button",
+                text: p.label,
+              })
+            )
+          ),
+          el("div", { class: "ur-adv-custom" }, [
+            el("span", { text: "自定义" }),
+            el("input", {
+              class: "ur-interval-input",
+              type: "number",
+              min: "10",
+              max: "600000",
+              step: "1",
+              value: "1000",
+              title: "10–600000 毫秒",
+            }),
+            el("span", { text: "ms" }),
+            el("button", { class: "ur-auto-btn", "data-act": "auto-next", type: "button", text: "开始" }),
+          ]),
           el("div", { class: "ur-label", text: "指定按钮" }),
           el("div", { class: "ur-chips" }, [
             el("button", { class: "ur-chip", "data-capture": "prevPage", type: "button", text: "指定上一页" }),
@@ -2211,6 +2196,19 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             el("button", { class: "ur-chip", "data-capture": "playPause", type: "button", text: "指定播放" }),
             el("button", { class: "ur-chip danger", "data-act": "clear-learned", type: "button", text: "删除本网站所有指定" }),
           ]),
+          el("div", { class: "ur-label", text: "遥控器大小" }),
+          el(
+            "div",
+            { class: "ur-chips", "data-scale-chips": "1" },
+            SCALE_PRESETS.map((n) =>
+              el("button", {
+                class: "ur-chip" + (n === 1 ? " is-on" : ""),
+                "data-scale": String(n),
+                type: "button",
+                text: Math.round(n * 100) + "%",
+              })
+            )
+          ),
         ]),
         el("div", { class: "ur-legend" }, [
           el("span", {}, [el("i", { class: "g" }), "识别到按钮"]),
@@ -2666,7 +2664,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       /* ignore */
     }
     const status = shadow.querySelector(".ur-status");
-    status.classList.toggle("is-auto", !!(autoRunning || cssAnimWatching));
+    const running = !!(autoRunning || cssAnimWatching);
+    root.classList.toggle("is-auto", running);
+    status.classList.toggle("is-auto", running);
     if (autoRunning) {
       status.textContent = "自动下一页中 · 每 " + formatInterval(autoInterval);
     } else if (cssAnimWatching) {
@@ -2679,6 +2679,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         ? "已识别：" + found.join(" · ")
         : "未识别到页面按钮，操作可能需要确认后强制执行";
     }
+  }
+
+  function visualRect() {
+    const box = (shadow && shadow.querySelector(".ur-scale")) || root;
+    return box.getBoundingClientRect();
   }
 
   function enableDrag(handle) {
@@ -2706,7 +2711,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       const innerBtn = event.target.closest && event.target.closest("button");
       if (innerBtn && innerBtn !== handle) return;
       draggingOverlay = true;
-      const rect = root.getBoundingClientRect();
+      const rect = visualRect();
       sx = event.clientX;
       sy = event.clientY;
       sl = rect.left;
@@ -2756,7 +2761,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   function place(left, top) {
-    const rect = root.getBoundingClientRect();
+    const rect = visualRect();
     const maxX = Math.max(8, window.innerWidth - rect.width - 8);
     const maxY = Math.max(8, window.innerHeight - rect.height - 8);
     const x = Math.min(maxX, Math.max(8, left));
@@ -2769,7 +2774,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   function keepInView() {
     if (!root || draggingOverlay) return;
-    const rect = root.getBoundingClientRect();
+    const rect = visualRect();
     if (rect.width === 0 && rect.height === 0) return;
     place(rect.left, rect.top);
   }
@@ -2785,6 +2790,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         /* ignore */
       }
     }
+    root.classList.remove("is-auto");
+    const status = shadow && shadow.querySelector(".ur-status");
+    if (status) status.classList.remove("is-auto");
     root.classList.add("is-hidden");
     saveState();
   }
@@ -2867,7 +2875,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
   }
 
-  // --- CSS anim feature start (delete with content/css-anim.js) ---
+  // CSS animation speed / skip
   function syncAnimRateChips(rate) {
     if (!shadow) return;
     for (const chip of shadow.querySelectorAll("[data-anim-rate]")) {
@@ -2949,7 +2957,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       showToast("CSS 动画操作失败。", "err");
     }
   }
-  // --- CSS anim feature end ---
+
 
   async function setPlaybackRate(rate) {
     const n = Number(rate);
@@ -2986,7 +2994,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
     const status = shadow && shadow.querySelector(".ur-status");
     if (status) {
-      status.classList.toggle("is-auto", !!(autoRunning || cssAnimWatching));
+      const running = !!(autoRunning || cssAnimWatching);
+      root.classList.toggle("is-auto", running);
+      status.classList.toggle("is-auto", running);
       if (autoRunning) status.textContent = "自动下一页中 · 每 " + formatInterval(autoInterval);
     }
   }
@@ -3035,7 +3045,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   function saveState() {
     if (!root) return;
-    const rect = root.getBoundingClientRect();
+    const rect = visualRect();
     const state = {
       left: Number.isFinite(rect.left) ? rect.left : 24,
       top: Number.isFinite(rect.top) ? rect.top : 24,

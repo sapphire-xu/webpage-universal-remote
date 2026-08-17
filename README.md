@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
-Edge / Chrome（Chromium）浏览器扩展：在网页上提供可拖拽的浮层遥控器，用于音视频快进快退、播放暂停，以及上一页 / 下一页。当前版本 **1.4.7**。本扩展按 Manifest V3 编写，在 **Google Chrome 与 Microsoft Edge 上同等支持**（未上架商店，均用「加载未打包的扩展」安装）。
+Edge / Chrome（Chromium）浏览器扩展：在网页上提供可拖拽的浮层遥控器，用于音视频快进快退、播放暂停，以及上一页 / 下一页。当前版本 **1.4.8**。本扩展按 Manifest V3 编写，在 **Google Chrome 与 Microsoft Edge 上同等支持**（未上架商店，均用「加载未打包的扩展」安装）。
 
 > Universal Webpage Remote: a browser extension for Microsoft Edge and Chrome. It can seek and pause audio, video, and animations, handle various kinds of in-page navigation, and run automation. It prefers simulating the site's own interactions first, and includes specialized handling for certain scenarios.
 
@@ -55,7 +55,7 @@ Chrome 无痕 / Edge InPrivate 需在详情里单独勾选允许。不支持 Fir
 - 高级里也可随时「指定上一页 / 下一页 / 播放」，或「删除本网站所有指定」  
 - 不能指定遥控器自己的按钮；指定后会提示成功或失败
 - 找不到按钮时，提示里还可选「强制执行（有风险）」  
-- 「高级」里可调遥控器大小、音视频倍速、自动下一页，以及试验性的 CSS 动画加速 / 跳过  
+- 「高级」顺序：音视频倍速 → CSS 动画 → 自动下一页 → 指定按钮 → 遥控器大小  
 
 ## 操作安全性评估
 

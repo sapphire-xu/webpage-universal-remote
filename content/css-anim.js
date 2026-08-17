@@ -1,12 +1,7 @@
 "use strict";
 
 /**
- * 试验功能：CSS / Web Animations 加速与跳过。
- * 删除本功能时：
- *  1. 删本文件
- *  2. 从 manifest.json 的 content_scripts 去掉 css-anim.js
- *  3. 删 background.js 里「CSS anim feature」整段
- *  4. 删 content.js / overlay.css 里「CSS anim feature」整段
+ * CSS / Web Animations 加速与跳过。
  */
 
 (() => {
