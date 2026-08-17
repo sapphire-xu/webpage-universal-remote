@@ -29,7 +29,7 @@ function extDead(err) {
 var UR = {
   HOST_ID: "universal-remote-host",
   CONFIRM_MS: 16000,
-  VERSION: "1.4.2",
+  VERSION: "1.4.3",
 };
 try {
   UR.VERSION = chrome.runtime.getManifest().version || UR.VERSION;
@@ -435,6 +435,7 @@ function queryAllDeep(selector, root = document) {
   const seen = new Set();
   const visit = (node) => {
     if (!node || seen.has(node)) return;
+    if (node.id === UR.HOST_ID || isOurHost(node)) return;
     seen.add(node);
     let found = [];
     try {
@@ -452,6 +453,7 @@ function queryAllDeep(selector, root = document) {
       all = [];
     }
     for (const el of all) {
+      if (el.id === UR.HOST_ID || isOurHost(el)) continue;
       if (el.shadowRoot) visit(el.shadowRoot);
     }
   };
@@ -822,7 +824,7 @@ function firePointerClick(target) {
 }
 
 function simulateClick(el) {
-  if (!el) return false;
+  if (!el || isOurHost(el)) return false;
   try {
     if (el.tagName === "LINK" && el.href) {
       window.location.href = el.href;
@@ -1357,8 +1359,8 @@ function findNativeButton(actionId) {
     if (adjacent) scored.push({ el: adjacent, score: 30, via: "list-adjacent" });
   }
 
-  const ranked = rankCandidates(scored.filter((x) => x && x.el && x.score >= 28));
-  return ranked.find((x) => !wasTried(actionId, x.el)) || null;
+  const ranked = rankCandidates(scored.filter((x) => x && x.el && x.score >= 28 && !isOurHost(x.el)));
+  return ranked.find((x) => !wasTried(actionId, x.el) && !isOurHost(x.el)) || null;
 }
 
 function findAdjacentListItem(dir) {
@@ -1893,6 +1895,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   let dragW = 0;
   let dragH = 0;
   let lastKnownPaused = true;
+  let actionLock = false;
+  let toastConsuming = false;
   let advancedOpen = false;
   let autoTimer = 0;
   let autoRunning = false;
@@ -2313,48 +2317,52 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   async function runAction(actionId, force) {
     const meta = UR.ACTIONS[actionId];
-    if (!meta) return;
+    if (!meta || actionLock) return;
+    actionLock = true;
+    try {
+      showToast("正在尝试「" + meta.label + "」…", "info", { busy: true });
 
-    showToast("正在尝试「" + meta.label + "」…", "info", { busy: true });
-
-    let result;
-    if (force) {
-      result = await execute(actionId, true);
-      if (result.ok) {
-        showToast(`已强制执行：${meta.label}。已绕过页面原逻辑，站点状态可能与显示不一致。使用强制跳过存在风险，请谨慎核对结果。`, "ok", {
-          retry: actionId,
-        });
-      } else {
-        showToast(`强制执行失败：${result.reason || "not_found"}${result.detail ? " " + result.detail : ""}`, "err");
+      let result;
+      if (force) {
+        result = await execute(actionId, true);
+        if (result.ok) {
+          showToast(`已强制执行：${meta.label}。已绕过页面原逻辑，站点状态可能与显示不一致。使用强制跳过存在风险，请谨慎核对结果。`, "ok", {
+            retry: actionId,
+          });
+        } else {
+          showToast(`强制执行失败：${result.reason || "not_found"}${result.detail ? " " + result.detail : ""}`, "err");
+        }
+        if (actionId === "playPause") rememberPlayState(result, true);
+        refreshChrome();
+        return;
       }
-      if (actionId === "playPause") rememberPlayState(result, true);
-      refreshChrome();
-      return;
-    }
 
-    result = await execute(actionId, false);
-    if (result.ok) {
-      const method = String(result.method || "");
-      const how = method.indexOf("jquery-click") === 0 || method.indexOf("dom-click") === 0
-        ? "已点击页面按钮（走页面原逻辑）"
-        : method.indexOf("page-item") === 0
-        ? "已强制切换页面（可能已跳过站点原逻辑）"
-        : method.indexOf("main-") === 0 || method === "media.currentTime" || method === "media.rate"
-          ? "已" + meta.label
-          : result.method === "click"
-            ? `已点击页面按钮：${meta.label}`
-            : `已通过播放器执行：${meta.label}`;
-      showToast(how + "\n若点错了，可尝试其它候选，或改为指定正确按钮。", "ok", { retry: actionId });
-      if (actionId === "playPause") rememberPlayState(result, true);
-      refreshChrome();
-      return;
-    }
+      result = await execute(actionId, false);
+      if (result.ok) {
+        const method = String(result.method || "");
+        const how = method.indexOf("jquery-click") === 0 || method.indexOf("dom-click") === 0
+          ? "已点击页面按钮（走页面原逻辑）"
+          : method.indexOf("page-item") === 0
+          ? "已强制切换页面（可能已跳过站点原逻辑）"
+          : method.indexOf("main-") === 0 || method === "media.currentTime" || method === "media.rate"
+            ? "已" + meta.label
+            : result.method === "click"
+              ? `已点击页面按钮：${meta.label}`
+              : `已通过播放器执行：${meta.label}`;
+        showToast(how + "\n若点错了，可尝试其它候选，或改为指定正确按钮。", "ok", { retry: actionId });
+        if (actionId === "playPause") rememberPlayState(result, true);
+        refreshChrome();
+        return;
+      }
 
-    showToast(
-      `未找到「${meta.label}」对应按钮。连点遥控不会强制。\n\n使用强制跳过可能存在风险，请谨慎使用。强制执行会绕过页面原来的点击与校验流程，站点状态或数据可能与预期不符。`,
-      "warn",
-      { force: actionId, retry: actionId }
-    );
+      showToast(
+        `未找到「${meta.label}」对应按钮。连点遥控不会强制。\n\n使用强制跳过可能存在风险，请谨慎使用。强制执行会绕过页面原来的点击与校验流程，站点状态或数据可能与预期不符。`,
+        "warn",
+        { force: actionId, retry: actionId }
+      );
+    } finally {
+      actionLock = false;
+    }
   }
 
   async function beginCapture(actionId) {
@@ -2372,18 +2380,24 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   async function tryOther(actionId) {
-    const label = UR.ACTIONS[actionId] ? UR.ACTIONS[actionId].label : actionId;
-    showToast("正在尝试其它「" + label + "」候选…", "info", { busy: true });
-    const prev = lastHits.get(actionId);
-    if (prev) markTried(actionId, prev);
-    const result = await execute(actionId, false, { skipMedia: true, skipSpecial: true, skipTried: true });
-    if (result && result.ok) {
-      showToast("已改点另一个候选。若仍不对，可继续尝试或改为指定正确按钮。", "ok", { retry: actionId });
-      if (actionId === "playPause") rememberPlayState(result, true);
-    } else {
-      showToast("没有其它可点的候选按钮了。可改为指定页面上的正确按钮。", "warn", { force: actionId });
+    if (actionLock) return;
+    actionLock = true;
+    try {
+      const label = UR.ACTIONS[actionId] ? UR.ACTIONS[actionId].label : actionId;
+      showToast("正在尝试其它「" + label + "」候选…", "info", { busy: true });
+      const prev = lastHits.get(actionId);
+      if (prev) markTried(actionId, prev);
+      const result = await execute(actionId, false, { skipMedia: true, skipSpecial: true, skipTried: true });
+      if (result && result.ok) {
+        showToast("已改点另一个候选。若仍不对，可继续尝试或改为指定正确按钮。", "ok", { retry: actionId });
+        if (actionId === "playPause") rememberPlayState(result, true);
+      } else {
+        showToast("没有其它可点的候选按钮了。可改为指定页面上的正确按钮。", "warn", { force: actionId });
+      }
+      refreshChrome();
+    } finally {
+      actionLock = false;
     }
-    refreshChrome();
   }
 
   chrome.storage.onChanged.addListener((changes, area) => {
@@ -2476,47 +2490,34 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (actions.length) box.appendChild(el("div", { class: "ur-toast-actions" }, actions));
     window.clearTimeout(toastTimer);
     if (opts.busy) return;
-    try {
-      chrome.storage.local.set({
-        [PENDING_TOAST_KEY]: {
-          ts: Date.now(),
-          text: String(text),
-          kind: kind || "",
-          extra: { force: forceAction || undefined, retry: retryAction || undefined },
-        },
-      });
-    } catch {
-      /* ignore */
-    }
     toastTimer = window.setTimeout(() => {
       box.hidden = true;
     }, kind === "err" ? 20000 : forceAction || retryAction ? UR.CONFIRM_MS : 2600);
   }
 
   async function consumePendingToast() {
+    if (toastConsuming) return;
     if (!shadow || !root || root.classList.contains("is-min") || root.classList.contains("is-hidden")) return;
-    let pending = null;
+    toastConsuming = true;
     try {
-      const data = await chrome.storage.local.get(PENDING_TOAST_KEY);
-      pending = data && data[PENDING_TOAST_KEY];
-    } catch {
-      return;
-    }
-    if (!pending || !pending.text) return;
-    if (pending.ts && Date.now() - pending.ts > 120000) {
+      let pending = null;
+      try {
+        const data = await chrome.storage.local.get(PENDING_TOAST_KEY);
+        pending = data && data[PENDING_TOAST_KEY];
+      } catch {
+        return;
+      }
+      if (!pending || !pending.text) return;
       try {
         chrome.storage.local.remove(PENDING_TOAST_KEY);
       } catch {
         /* ignore */
       }
-      return;
+      if (pending.ts && Date.now() - pending.ts > 120000) return;
+      showToast(pending.text, pending.kind || "ok", pending.extra || { retry: pending.actionId });
+    } finally {
+      toastConsuming = false;
     }
-    try {
-      chrome.storage.local.remove(PENDING_TOAST_KEY);
-    } catch {
-      /* ignore */
-    }
-    showToast(pending.text, pending.kind || "ok", pending.extra || { retry: pending.actionId });
   }
 
   function rememberPlayState(result, toggleIfUnknown) {
