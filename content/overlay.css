@@ -359,6 +359,14 @@
   display: none;
 }
 
+/* --- CSS anim feature start (delete with content/css-anim.js) --- */
+.ur-css-anim {
+  margin: 2px 0 8px;
+  padding-top: 2px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+/* --- CSS anim feature end --- */
+
 .ur-chips {
   display: flex;
   flex-wrap: wrap;

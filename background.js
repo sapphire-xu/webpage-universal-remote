@@ -539,6 +539,32 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  // --- CSS anim feature start (delete with content/css-anim.js) ---
+  if (msg.type === "UR_CSS_ANIM") {
+    const tabId = sender.tab.id;
+    const kind = msg.kind || "rate";
+    const rate = msg.rate;
+    (async () => {
+      const frameIds = await listFrameIds(tabId);
+      let count = 0;
+      let hit = false;
+      for (const frameId of frameIds) {
+        try {
+          const res = await chrome.tabs.sendMessage(tabId, { type: "UR_CSS_ANIM", kind, rate }, { frameId });
+          if (res && res.count) count += Number(res.count) || 0;
+          if (res && res.ok) hit = true;
+        } catch {
+          /* no script in this frame */
+        }
+      }
+      return { ok: hit || count > 0, count, kind };
+    })()
+      .then(sendResponse)
+      .catch(() => sendResponse({ ok: false, count: 0 }));
+    return true;
+  }
+  // --- CSS anim feature end ---
+
   if (msg.type === "UR_BROADCAST") {
     relayToFrames(sender.tab.id, sender.frameId ?? 0, msg.payload)
       .then(sendResponse)

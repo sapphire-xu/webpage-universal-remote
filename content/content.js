@@ -29,7 +29,7 @@ function extDead(err) {
 var UR = {
   HOST_ID: "universal-remote-host",
   CONFIRM_MS: 16000,
-  VERSION: "1.4.3",
+  VERSION: "1.4.4",
 };
 try {
   UR.VERSION = chrome.runtime.getManifest().version || UR.VERSION;
@@ -2150,6 +2150,30 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             el("span", { text: "ms" }),
             el("button", { class: "ur-auto-btn", "data-act": "auto-next", type: "button", text: "开始" }),
           ]),
+          // --- CSS anim feature start (delete with content/css-anim.js) ---
+          el("div", { class: "ur-css-anim" }, [
+            el("div", { class: "ur-label", text: "CSS 动画（试验）" }),
+            el(
+              "div",
+              { class: "ur-chips", "data-anim-rate-chips": "1" },
+              [0.5, 1, 2, 16].map((n) =>
+                el("button", {
+                  class: "ur-chip" + (n === 1 ? " is-on" : ""),
+                  "data-anim-rate": String(n),
+                  type: "button",
+                  text: n + "×",
+                })
+              )
+            ),
+            el("button", {
+              class: "ur-chip",
+              "data-act": "css-anim-skip",
+              type: "button",
+              title: "把视口内正在播放的有限次 CSS 动画跳到结束",
+              text: "跳过当前动画",
+            }),
+          ]),
+          // --- CSS anim feature end ---
           el("div", { class: "ur-label", text: "指定按钮" }),
           el("div", { class: "ur-chips" }, [
             el("button", { class: "ur-chip", "data-capture": "prevPage", type: "button", text: "指定上一页" }),
@@ -2244,7 +2268,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   function onClick(event) {
-    const btn = event.target.closest("[data-act], [data-action], [data-force], [data-capture], [data-copy], [data-retry], [data-rate], [data-interval]");
+    const btn = event.target.closest("[data-act], [data-action], [data-force], [data-capture], [data-copy], [data-retry], [data-rate], [data-interval], [data-anim-rate]");
     if (!btn) return;
     event.preventDefault();
     event.stopPropagation();
@@ -2265,6 +2289,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (btn.dataset.act === "auto-next") {
       if (autoRunning) stopAutoNext("已停止自动下一页");
       else startAutoNext();
+      return;
+    }
+    if (btn.dataset.act === "css-anim-skip") {
+      runCssAnim("skip");
+      return;
+    }
+    if (btn.dataset.animRate) {
+      runCssAnim("rate", Number(btn.dataset.animRate));
       return;
     }
     if (btn.dataset.act === "clear-learned") {
@@ -2748,6 +2780,35 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       chip.classList.toggle("is-on", Number(chip.dataset.rate) === currentRate);
     }
   }
+
+  // --- CSS anim feature start (delete with content/css-anim.js) ---
+  function syncAnimRateChips(rate) {
+    if (!shadow) return;
+    for (const chip of shadow.querySelectorAll("[data-anim-rate]")) {
+      chip.classList.toggle("is-on", Number(chip.dataset.animRate) === Number(rate));
+    }
+  }
+
+  async function runCssAnim(kind, rate) {
+    showToast(kind === "skip" ? "正在跳过 CSS 动画…" : "正在设置 CSS 动画速度…", "info", { busy: true });
+    try {
+      const res = await chrome.runtime.sendMessage({ type: "UR_CSS_ANIM", kind, rate });
+      if (kind === "rate") syncAnimRateChips(rate);
+      if (res && res.ok) {
+        showToast(
+          kind === "skip"
+            ? "已跳过 " + res.count + " 段视口内的 CSS 动画。"
+            : "已将 " + res.count + " 段 CSS 动画设为 " + rate + "×。",
+          "ok"
+        );
+      } else {
+        showToast("没有找到可控制的 CSS 动画（脚本/画布动画不在此功能范围内）。", "warn");
+      }
+    } catch {
+      showToast("CSS 动画操作失败。", "err");
+    }
+  }
+  // --- CSS anim feature end ---
 
   async function setPlaybackRate(rate) {
     const n = Number(rate);
