@@ -29,7 +29,7 @@ function extDead(err) {
 var UR = {
   HOST_ID: "universal-remote-host",
   CONFIRM_MS: 16000,
-  VERSION: "1.4.6",
+  VERSION: "1.4.7",
 };
 try {
   UR.VERSION = chrome.runtime.getManifest().version || UR.VERSION;
@@ -2083,6 +2083,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     const playIcon = el("span", { "data-play-icon": "1" }, [svgIcon("play")]);
 
     root = el("div", { class: "ur-root" }, [
+      el("div", { class: "ur-scale" }, [
       el("div", { class: "ur-toast", hidden: true }),
       el("section", { class: "ur-panel" }, [
         el("header", { class: "ur-head" }, [
@@ -2137,14 +2138,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
               })
             )
           ),
-          el("div", { class: "ur-label", text: "操作安全性" }),
-          el("div", { class: "ur-safety" }, [
-            el("div", { text: "★★☆☆☆  音视频快进/倍速：站点若有计时检查，可能导致错误" }),
-            el("div", { text: "★★★☆☆  上一页/下一页：可能跳过必做步骤，但可以自行核对" }),
-            el("div", { text: "★☆☆☆☆  强制翻页：极有可能造成错误，请谨慎" }),
-            el("div", { text: "★★☆☆☆  自动下一页：过快可能跳过必做步骤，且来不及检查" }),
-            el("div", { text: "★★★★☆  CSS 动画倍速/跳过：后台几乎不检查此类动画，一般不易出错" }),
-          ]),
           el("div", { class: "ur-label", text: "倍速" }),
           el(
             "div",
@@ -2227,6 +2220,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       el("button", { class: "ur-min", type: "button", title: "展开遥控器" }, [
         el("img", { alt: "", src: chrome.runtime.getURL("icons/icon48.png") }),
         "遥控",
+      ]),
       ]),
     ]);
 
@@ -2672,6 +2666,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       /* ignore */
     }
     const status = shadow.querySelector(".ur-status");
+    status.classList.toggle("is-auto", !!(autoRunning || cssAnimWatching));
     if (autoRunning) {
       status.textContent = "自动下一页中 · 每 " + formatInterval(autoInterval);
     } else if (cssAnimWatching) {
@@ -2805,7 +2800,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
     if (persist) {
       saveState();
-      keepInView();
+      const box = shadow && shadow.querySelector(".ur-scale");
+      if (box) {
+        const onEnd = (ev) => {
+          if (ev && ev.propertyName && ev.propertyName !== "transform") return;
+          box.removeEventListener("transitionend", onEnd);
+          keepInView();
+        };
+        box.addEventListener("transitionend", onEnd);
+        window.setTimeout(() => {
+          box.removeEventListener("transitionend", onEnd);
+          keepInView();
+        }, 450);
+      } else {
+        keepInView();
+      }
     }
   }
 
@@ -2976,8 +2985,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       btn.classList.toggle("is-on", autoRunning);
     }
     const status = shadow && shadow.querySelector(".ur-status");
-    if (status && autoRunning) {
-      status.textContent = "自动下一页中 · 每 " + formatInterval(autoInterval);
+    if (status) {
+      status.classList.toggle("is-auto", !!(autoRunning || cssAnimWatching));
+      if (autoRunning) status.textContent = "自动下一页中 · 每 " + formatInterval(autoInterval);
     }
   }
 

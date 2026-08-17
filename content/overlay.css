@@ -11,11 +11,21 @@
   color: #f4f1ff;
   user-select: none;
   pointer-events: auto;
-  zoom: var(--ur-scale, 1);
 }
 
 .ur-root * {
   box-sizing: border-box;
+}
+
+.ur-scale {
+  transform: scale(var(--ur-scale, 1));
+  transform-origin: left bottom;
+  transition: transform 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.ur-root.is-drag .ur-scale {
+  transition: none;
 }
 
 .ur-panel {
@@ -105,6 +115,7 @@
 }
 
 .ur-status {
+  position: relative;
   min-height: 20px;
   margin: 0 0 10px;
   padding: 5px 9px;
@@ -116,6 +127,46 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.ur-status.is-auto {
+  color: #ffe38a;
+  border-color: rgba(255, 214, 120, 0.42);
+  background:
+    linear-gradient(180deg, rgba(255, 214, 120, 0.12), rgba(255, 214, 120, 0.04));
+}
+
+.ur-status.is-auto::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    transparent 38%,
+    rgba(255, 236, 170, 0.38) 50%,
+    transparent 62%,
+    transparent 100%
+  );
+  background-size: 220% 100%;
+  animation: ur-status-sheen 2.6s ease-in-out infinite;
+}
+
+@keyframes ur-status-sheen {
+  0% {
+    background-position: 120% 0;
+    opacity: 0.35;
+  }
+  35% {
+    opacity: 0.9;
+  }
+  70%,
+  100% {
+    background-position: -120% 0;
+    opacity: 0.3;
+  }
 }
 
 .ur-label {
@@ -360,16 +411,7 @@
   display: none;
 }
 
-.ur-safety {
-  margin: 0 0 10px;
-  padding: 8px 9px;
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.22);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  font-size: 10.5px;
-  line-height: 1.55;
-  color: #c8c1dc;
-}
+
 
 /* --- CSS anim feature start (delete with content/css-anim.js) --- */
 .ur-css-anim {
